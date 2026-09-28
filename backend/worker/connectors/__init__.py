@@ -5,14 +5,18 @@ from .googlenews import GoogleNews
 from .hackernews import HackerNews
 from .mastodon import Mastodon
 from .reddit import Reddit
+from .research import (ArXiv, ClinicalTrials, GitHub, SecEdgar, StackExchange,
+                       Wikipedia)
 from .rss import Rss
 from .telegram import Telegram
 from .threads import Threads
 from .youtube import YouTube
 
-# stateless tier-1 connectors
+# stateless tier-1 connectors (no config needed)
 REGISTRY = {c.key: c for c in (HackerNews, Reddit, Bluesky, Mastodon,
-                               Gdelt, GoogleNews, Threads, YouTube)}
+                               Gdelt, GoogleNews, Threads, YouTube,
+                               ArXiv, SecEdgar, Wikipedia, GitHub,
+                               StackExchange, ClinicalTrials)}
 
 
 def _stealth(key: str, db):
@@ -32,6 +36,17 @@ def build(connector_key: str, db=None, source_config: dict | None = None):
         return Rss(feeds=cfg.get("feeds", []), rsshub_routes=cfg.get("rsshub_routes", []))
     if connector_key == "telegram":
         return Telegram(channels=cfg.get("channels", []))
+    if connector_key in ("appstore", "factcheck", "podcastindex", "places"):
+        from .gated import (AppStoreReviews, GoogleFactCheck, PlacesReviews,
+                            PodcastIndex)
+        if connector_key == "appstore":
+            return AppStoreReviews(app_ids=cfg.get("app_ids", []), country=cfg.get("country", "us"))
+        if connector_key == "factcheck":
+            return GoogleFactCheck(api_key=cfg.get("api_key", ""))
+        if connector_key == "podcastindex":
+            return PodcastIndex(api_key=cfg.get("api_key", ""), api_secret=cfg.get("api_secret", ""))
+        if connector_key == "places":
+            return PlacesReviews(api_key=cfg.get("api_key", ""), place_ids=cfg.get("place_ids", []))
     if connector_key == "threads":
         from .fallback import FallbackConnector
         return FallbackConnector("threads", [Threads(), _stealth("threads_stealth", db)])

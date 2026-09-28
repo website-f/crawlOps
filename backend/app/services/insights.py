@@ -356,6 +356,30 @@ def forecast(db: Session, topic_id: int | None, days: int = 30, horizon: int = 7
             "confidence": conf}
 
 
+def galaxy(db: Session, topic_id: int | None, days: int = 7, limit: int = 600) -> dict:
+    """Conversation galaxy: each recent post = a star. angle by platform, radius by
+    age, size by engagement, hue by sentiment. Rendered as a canvas star-field."""
+    now = datetime.now(timezone.utc)
+    f = _scope(topic_id, days)
+    posts = (db.query(Post.platform, Post.sentiment_score, Post.posted_at,
+                      func.coalesce(Post.engagement["likes"].as_float(), 0).label("eng"))
+             .filter(and_(*f)).order_by(Post.posted_at.desc()).limit(limit).all())
+    platforms = sorted({p.platform for p in posts})
+    pidx = {p: i for i, p in enumerate(platforms)}
+    max_eng = max((float(p.eng) for p in posts), default=1) or 1
+    max_age_h = max(days * 24, 1)
+    stars = []
+    for p in posts:
+        age_h = (now - (p.posted_at or now)).total_seconds() / 3600
+        stars.append({
+            "s": round(pidx[p.platform] / max(len(platforms), 1), 4),      # platform slot 0..1
+            "sent": round(max(-1, min(1, p.sentiment_score or 0)), 2),
+            "e": round((float(p.eng) / max_eng) ** 0.5, 3),               # size (sqrt-compressed)
+            "age": round(min(1, age_h / max_age_h), 3),                    # radius 0..1
+        })
+    return {"stars": stars, "platforms": platforms}
+
+
 def author_pyramid(db: Session, topic_id: int | None, days: int = 30) -> dict:
     """Author tiers by engagement percentile (top 5% / 20% / 50% / rest)."""
     f = _scope(topic_id, days, [Post.author_key != ""])

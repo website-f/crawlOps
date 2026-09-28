@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import Cluster, Post
-from ..services import insights
+from ..services import ai_insights, insights
 from ..services.spikes import detect_spike, hourly_counts, volume_alert
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
@@ -176,3 +176,28 @@ def waterfall(topic_id: int | None = None, days: int = 30, db: Session = Depends
 @router.get("/forecast")
 def forecast(topic_id: int | None = None, days: int = 30, db: Session = Depends(get_db)):
     return insights.forecast(db, topic_id, days)
+
+
+@router.get("/galaxy")
+def galaxy(topic_id: int | None = None, days: int = 7, db: Session = Depends(get_db)):
+    return insights.galaxy(db, topic_id, days)
+
+
+@router.get("/narratives")
+def narratives(topic_id: int | None = None, days: int = 14, db: Session = Depends(get_db)):
+    return ai_insights.narratives(db, topic_id, days)
+
+
+@router.get("/discourse")
+async def discourse(topic_id: int | None = None, days: int = 14, db: Session = Depends(get_db)):
+    return await ai_insights.discourse_clusters(db, topic_id, days)
+
+
+@router.get("/causal")
+async def causal(topic_id: int | None = None, days: int = 14, db: Session = Depends(get_db)):
+    return await ai_insights.causal_chains(db, topic_id, days)
+
+
+@router.get("/brief")
+async def brief(topic_id: int | None = None, days: int = 1, db: Session = Depends(get_db)):
+    return await ai_insights.daily_brief(db, topic_id, days)

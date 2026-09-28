@@ -1,4 +1,4 @@
-import { IconFilter, IconX } from '@tabler/icons-react'
+import { IconAlertHexagon, IconFileText, IconFilter, IconSparkles, IconX } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line,
@@ -8,14 +8,14 @@ import {
 import { FacetPanel, Gauge, Panel, Sparkline, StatTile, platformIconFor } from '../components/analytics'
 import { ConstellationGraph, HeatmapGrid } from '../components/insight-extras'
 import { PlatformIcon } from '../components/PlatformIcon'
-import { fmtNum, get, post } from '../lib/api'
+import { download, fmtNum, get, post } from '../lib/api'
 import { BRAND, SENTIMENT, SERIES } from '../lib/platform'
 
-export type AnalyticsView = 'overview' | 'health' | 'sentiment' | 'trends' | 'influencers'
+export type AnalyticsView = 'overview' | 'health' | 'sentiment' | 'trends' | 'influencers' | 'brief'
 
 const TITLES: Record<AnalyticsView, string> = {
   overview: 'Overview', health: 'Brand Health', sentiment: 'Sentiment & Emotions',
-  trends: 'Trends', influencers: 'Influencers',
+  trends: 'Trends', influencers: 'Influencers', brief: 'Daily Brief',
 }
 
 interface Topic { id: number; name: string }
@@ -43,6 +43,10 @@ export default function Analytics({ view = 'overview' }: { view?: AnalyticsView 
   const [waterfall, setWaterfall] = useState<any[]>([])
   const [constellation, setConstellation] = useState<any>({ nodes: [], edges: [] })
   const [network, setNetwork] = useState<any>({ nodes: [] })
+  const [discourse, setDiscourse] = useState<any>({ clusters: [] })
+  const [narratives, setNarratives] = useState<any>({ narratives: [] })
+  const [causal, setCausal] = useState<any>({ chains: [] })
+  const [brief, setBrief] = useState<any>(null)
   const [railOpen, setRailOpen] = useState(false)
 
   useEffect(() => { get<Topic[]>('/topics').then(setTopics).catch(() => {}) }, [])
@@ -71,10 +75,16 @@ export default function Analytics({ view = 'overview' }: { view?: AnalyticsView 
       get(`/analytics/momentum${scope}`).then(setMomentum).catch(() => {})
       get(`/analytics/constellation${scope}`).then(setConstellation).catch(() => {})
       get(`/analytics/heatmap${scope}`).then((d) => setHeatmap(d.grid)).catch(() => {})
+      get(`/analytics/discourse${scope}`).then(setDiscourse).catch(() => {})
     }
     if (need('influencers')) {
       get(`/analytics/pyramid${scope}`).then(setPyramid).catch(() => {})
       get(`/analytics/network${scope}`).then(setNetwork).catch(() => {})
+      get(`/analytics/narratives${scope}`).then(setNarratives).catch(() => {})
+    }
+    if (need('brief')) {
+      get(`/analytics/brief${scope}`).then(setBrief).catch(() => {})
+      get(`/analytics/causal${scope}`).then(setCausal).catch(() => {})
     }
   }, [topicId, days, view])
 
@@ -106,6 +116,10 @@ export default function Analytics({ view = 'overview' }: { view?: AnalyticsView 
             <button key={d} onClick={() => setDays(d)} className={`px-3 py-1.5 text-sm ${days === d ? 'bg-ink text-white' : 'bg-white'}`}>{d}d</button>
           ))}
         </div>
+        <button onClick={() => download(`/reports/pdf?days=${days}${topicId ? `&topic_id=${topicId}` : ''}`, 'crawlops-report.pdf')}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border bg-white border-grid active:scale-[0.98]" title="Export PDF report">
+          <IconFileText size={15} stroke={2} /><span className="hidden sm:inline">PDF</span>
+        </button>
       </div>
 
       <div className={usesExplore ? 'lg:grid lg:grid-cols-[240px_1fr] lg:gap-5' : ''}>
@@ -331,6 +345,21 @@ export default function Analytics({ view = 'overview' }: { view?: AnalyticsView 
                 <ConstellationGraph nodes={constellation.nodes} edges={constellation.edges} />
               </Panel>
             </div>
+            <Panel title="Discourse families" right={<span className="text-xs text-muted">AI classified</span>}>
+              {discourse.clusters?.length ? (
+                <div className="space-y-1.5">
+                  {discourse.clusters.map((c: any, i: number) => (
+                    <div key={i} className="flex items-center gap-2 text-sm">
+                      <span className="w-36 truncate capitalize">{c.family}</span>
+                      <div className="flex-1 h-2 rounded-full bg-grid overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${c.share}%`, background: c.sentiment === 'pos' ? '#0ca30c' : c.sentiment === 'neg' ? '#d03b3b' : '#898781' }} />
+                      </div>
+                      <span className="tabular-nums text-xs text-inksec w-8 text-right">{c.share}%</span>
+                    </div>
+                  ))}
+                </div>
+              ) : <div className="text-muted text-sm py-16 text-center">{discourse.note || 'No data yet — enable an AI provider.'}</div>}
+            </Panel>
           </>}
 
           {view === 'influencers' && <>
@@ -358,6 +387,61 @@ export default function Analytics({ view = 'overview' }: { view?: AnalyticsView 
                   ))}
                 </div>
               ) : <div className="text-muted text-sm py-8 text-center">No author data yet.</div>}
+            </Panel>
+
+            <Panel title="Coordinated narratives" right={<span className="text-xs text-muted">same content, many accounts</span>}>
+              {narratives.narratives?.length ? (
+                <div className="space-y-2">
+                  {narratives.narratives.map((n: any, i: number) => (
+                    <div key={i} className="flex items-start gap-2 p-2.5 rounded-lg border border-grid">
+                      {n.coordinated && <IconAlertHexagon size={16} className="text-[#d03b3b] shrink-0 mt-0.5" />}
+                      <div className="min-w-0">
+                        <div className="text-sm truncate">{n.sample}</div>
+                        <div className="text-[11px] text-muted mt-0.5">
+                          {n.accounts} accounts · {n.posts} posts · {(n.platforms || []).join(', ')}
+                          {n.coordinated && <span className="text-[#d03b3b] font-medium"> · coordinated</span>}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : <div className="text-muted text-sm py-8 text-center">No coordinated narratives detected (needs several accounts repeating the same content).</div>}
+            </Panel>
+          </>}
+
+          {view === 'brief' && <>
+            <Panel title="Daily executive brief" right={<span className="inline-flex items-center gap-1 text-xs text-muted"><IconSparkles size={12} stroke={2} />AI</span>}>
+              {brief ? (
+                brief.brief
+                  ? <div className="text-sm leading-relaxed whitespace-pre-wrap">{brief.brief}</div>
+                  : (
+                    <div>
+                      <div className="text-sm text-muted mb-3">{brief.note || 'Enable an AI provider to generate the written brief. Raw facts:'}</div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        {Object.entries(brief.facts || {}).filter(([k]) => typeof (brief.facts as any)[k] !== 'object').map(([k, v]: any) => (
+                          <div key={k} className="bg-plane rounded-lg p-2.5"><div className="text-[11px] text-inksec capitalize">{k.replace(/_/g, ' ')}</div><div className="font-semibold tabular-nums">{String(v)}</div></div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+              ) : <div className="text-muted text-sm py-10 text-center">Loading…</div>}
+            </Panel>
+
+            <Panel title="Cause and effect" right={<span className="inline-flex items-center gap-1 text-xs text-muted"><IconSparkles size={12} stroke={2} />AI</span>}>
+              {causal.chains?.length ? (
+                <div className="space-y-3">
+                  {causal.chains.map((c: any, i: number) => (
+                    <div key={i} className="p-3 rounded-lg border border-grid">
+                      <div className="text-sm font-medium">{c.cause}{c.date && <span className="text-muted font-normal"> · {c.date}</span>}</div>
+                      <ul className="mt-1 space-y-0.5">
+                        {(c.effects || []).map((e: string, j: number) => (
+                          <li key={j} className="text-sm text-inksec flex gap-1.5"><span className="text-muted">→</span>{e}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              ) : <div className="text-muted text-sm py-10 text-center">{causal.note || 'No causal chains yet.'}</div>}
             </Panel>
           </>}
         </div>

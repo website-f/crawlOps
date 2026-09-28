@@ -1,7 +1,10 @@
-import { IconNews, IconWorld } from '@tabler/icons-react'
 import {
-  SiBluesky, SiFacebook, SiInstagram, SiMastodon, SiReddit, SiTelegram,
-  SiThreads, SiTiktok, SiX, SiYcombinator, SiYoutube,
+  IconBuildingBank, IconFlask, IconMicrophone, IconNews, IconWorld,
+} from '@tabler/icons-react'
+import {
+  SiApple, SiArxiv, SiBluesky, SiFacebook, SiGithub, SiGooglemaps, SiInstagram,
+  SiMastodon, SiReddit, SiStackoverflow, SiTelegram, SiThreads, SiTiktok,
+  SiWikipedia, SiX, SiYcombinator, SiYoutube,
 } from 'react-icons/si'
 import { BRAND } from '../lib/platform'
 
@@ -18,6 +21,16 @@ const GLYPHS: Record<string, React.ComponentType<{ size?: number; color?: string
   telegram: SiTelegram,
   x: SiX,
   news: IconNews as any,
+  arxiv: SiArxiv,
+  sec: IconBuildingBank as any,
+  wikipedia: SiWikipedia,
+  github: SiGithub,
+  stackexchange: SiStackoverflow,
+  clinicaltrials: IconFlask as any,
+  appstore: SiApple,
+  factcheck: IconWorld as any,
+  podcast: IconMicrophone as any,
+  places: SiGooglemaps,
 }
 
 /** Real platform logo, brand-colored by default. */

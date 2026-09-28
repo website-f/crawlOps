@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .bootstrap import init_schema_and_seed
 from .routers import (ai_engine, alerts, analytics, auth, benchmark, explore,
-                      media, posts, settings, sources, suppression, topics)
+                      media, posts, reports, settings, sources, suppression, topics)
 from .services import meili
 from .services.auth import current_user
 
@@ -36,7 +36,7 @@ app.include_router(media.router)
 # protected — every request needs a valid bearer token
 _auth = [Depends(current_user)]
 for r in (topics, posts, analytics, ai_engine, sources, suppression, alerts,
-          settings, explore, benchmark):
+          settings, explore, benchmark, reports):
     app.include_router(r.router, dependencies=_auth)
 
 

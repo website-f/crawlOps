@@ -12,3 +12,4 @@ python-dateutil==2.9.*
 pyjwt==2.10.*
 bcrypt==4.2.*
 cryptography==43.*
+reportlab==4.2.*

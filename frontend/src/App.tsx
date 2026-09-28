@@ -1,7 +1,8 @@
 import {
-  IconAntenna, IconBell, IconChartArcs, IconCpu, IconHeartRateMonitor,
-  IconLayoutDashboard, IconLogout, IconMap2, IconMenu2, IconMoodSmile, IconPlug,
-  IconScale, IconSettings, IconTargetArrow, IconUserOff, IconUsersGroup, IconX,
+  IconAntenna, IconBell, IconChartArcs, IconCpu, IconFileText, IconHeartRateMonitor,
+  IconHelp, IconLayoutDashboard, IconLogout, IconMap2, IconMenu2, IconMoodSmile,
+  IconPlanet, IconPlug, IconScale, IconSettings, IconTargetArrow, IconUserOff,
+  IconUsersGroup, IconX,
 } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
@@ -11,12 +12,14 @@ import Alerts from './pages/Alerts'
 import Analytics from './pages/Analytics'
 import Competitors from './pages/Competitors'
 import Feed from './pages/Feed'
+import Galaxy from './pages/Galaxy'
 import Login from './pages/Login'
 import MapView from './pages/MapView'
 import SettingsPage from './pages/Settings'
 import Sources from './pages/Sources'
 import Suppression from './pages/Suppression'
 import Topics from './pages/Topics'
+import Tutorial from './pages/Tutorial'
 
 const GROUPS: { label: string; items: { to: string; label: string; Icon: any }[] }[] = [
   {
@@ -35,6 +38,8 @@ const GROUPS: { label: string; items: { to: string; label: string; Icon: any }[]
       { to: '/analytics/sentiment', label: 'Sentiment & Emotions', Icon: IconMoodSmile },
       { to: '/analytics/trends', label: 'Trends', Icon: IconChartArcs },
       { to: '/analytics/influencers', label: 'Influencers', Icon: IconUsersGroup },
+      { to: '/galaxy', label: 'Galaxy', Icon: IconPlanet },
+      { to: '/analytics/brief', label: 'Daily Brief', Icon: IconFileText },
       { to: '/competitors', label: 'Competitors', Icon: IconScale },
     ],
   },
@@ -51,6 +56,7 @@ const GROUPS: { label: string; items: { to: string; label: string; Icon: any }[]
       { to: '/sources', label: 'Sources', Icon: IconPlug },
       { to: '/ai', label: 'AI Engine', Icon: IconCpu },
       { to: '/settings', label: 'Settings', Icon: IconSettings },
+      { to: '/tutorial', label: 'Tutorial', Icon: IconHelp },
     ],
   },
 ]
@@ -136,12 +142,14 @@ function Shell() {
           <Route path="/analytics/trends" element={<Analytics view="trends" />} />
           <Route path="/analytics/influencers" element={<Analytics view="influencers" />} />
           <Route path="/competitors" element={<Competitors />} />
+          <Route path="/galaxy" element={<Galaxy />} />
           <Route path="/map" element={<MapView />} />
           <Route path="/alerts" element={<Alerts />} />
           <Route path="/sources" element={<Sources />} />
           <Route path="/ai" element={<AIEngine />} />
           <Route path="/suppression" element={<Suppression />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/tutorial" element={<Tutorial />} />
         </Routes>
       </main>
     </div>

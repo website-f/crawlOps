@@ -26,6 +26,16 @@ export const BRAND: Record<string, { label: string; color: string }> = {
   tiktok: { label: 'TikTok', color: '#010101' },
   telegram: { label: 'Telegram', color: '#26A5E4' },
   x: { label: 'X', color: '#0f1419' },
+  arxiv: { label: 'arXiv', color: '#B31B1B' },
+  sec: { label: 'SEC EDGAR', color: '#1e40af' },
+  wikipedia: { label: 'Wikipedia', color: '#636466' },
+  github: { label: 'GitHub', color: '#181717' },
+  stackexchange: { label: 'Stack Overflow', color: '#F48024' },
+  clinicaltrials: { label: 'ClinicalTrials', color: '#0f766e' },
+  appstore: { label: 'App Store', color: '#0D96F6' },
+  factcheck: { label: 'Fact Check', color: '#059669' },
+  podcast: { label: 'Podcast', color: '#8b5cf6' },
+  places: { label: 'Places', color: '#EA4335' },
 }
 
 export const SENTIMENT = {
@@ -34,4 +44,4 @@ export const SENTIMENT = {
   neg: { label: 'Negative', color: '#d03b3b' },   // status critical
 }
 
-export const FEED_TABS = ['all', 'news', 'facebook', 'instagram', 'tiktok', 'threads', 'x', 'reddit', 'bluesky', 'mastodon', 'telegram', 'hackernews', 'youtube']
+export const FEED_TABS = ['all', 'news', 'facebook', 'instagram', 'tiktok', 'threads', 'x', 'reddit', 'bluesky', 'mastodon', 'telegram', 'hackernews', 'youtube', 'arxiv', 'sec', 'wikipedia', 'github', 'stackexchange', 'clinicaltrials', 'appstore', 'factcheck', 'podcast', 'places']

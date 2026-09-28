@@ -1,4 +1,51 @@
+import { useEffect, useRef } from 'react'
+
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+// Conversation galaxy: each post is a star. angle=platform, radius=age, size=engagement,
+// hue=sentiment, bright core = overall. Drawn on a canvas.
+export function GalaxyCanvas({ stars, platforms }: {
+  stars: { s: number; sent: number; e: number; age: number }[]
+  platforms: string[]
+}) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const cv = ref.current
+    if (!cv) return
+    const ctx = cv.getContext('2d')
+    if (!ctx) return
+    const W = cv.width, H = cv.height, cx = W / 2, cy = H / 2, R = Math.min(W, H) / 2 - 14
+    ctx.clearRect(0, 0, W, H)
+    ctx.fillStyle = '#0b0b12'
+    ctx.fillRect(0, 0, W, H)
+    // core glow
+    const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, 60)
+    g.addColorStop(0, 'rgba(42,120,214,0.9)'); g.addColorStop(1, 'rgba(42,120,214,0)')
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 60, 0, Math.PI * 2); ctx.fill()
+    const hue = (s: number) => s > 0.15 ? '#4ade80' : s < -0.15 ? '#f87171' : '#cbd5e1'
+    for (const st of stars) {
+      const ang = st.s * Math.PI * 2 + (st.age * 0.6)
+      const r = 26 + st.age * R
+      const x = cx + Math.cos(ang) * r, y = cy + Math.sin(ang) * r
+      const size = 1 + st.e * 5
+      ctx.globalAlpha = 0.55 + st.e * 0.45
+      ctx.fillStyle = hue(st.sent)
+      ctx.beginPath(); ctx.arc(x, y, size, 0, Math.PI * 2); ctx.fill()
+    }
+    ctx.globalAlpha = 1
+  }, [stars])
+  return (
+    <div>
+      <canvas ref={ref} width={520} height={340} className="w-full rounded-xl" style={{ maxHeight: 340 }} />
+      <div className="flex flex-wrap gap-3 mt-2 text-[11px] text-inksec">
+        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ background: '#4ade80' }} />positive</span>
+        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ background: '#cbd5e1' }} />neutral</span>
+        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ background: '#f87171' }} />negative</span>
+        <span className="text-muted">core = now · outer = older · size = engagement · {platforms.length} platforms</span>
+      </div>
+    </div>
+  )
+}
 
 // Day x hour activity heatmap. Single-hue sequential ramp (dataviz: blue).
 export function HeatmapGrid({ grid }: { grid: number[][] }) {
