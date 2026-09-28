@@ -66,12 +66,12 @@ const WALKTHROUGH: Section[] = [
   },
   {
     key: 'connect', label: 'Connecting accounts', Icon: IconBrandChrome,
-    intro: 'News, Mastodon, Bluesky, Reddit, Wikipedia and others need no login. Facebook, Instagram, TikTok, X and Threads are login-walled — the crawler must be signed in as a real account.',
+    intro: 'News, Mastodon, Bluesky, Reddit, Wikipedia and others need no login. Facebook, Instagram, TikTok, X and Threads are login-walled — the crawler must be signed in as a real account. Two ways to connect one:',
     steps: [
-      { n: 1, title: 'Install the extension', body: 'Load browser-extension/ via chrome://extensions → Developer mode → Load unpacked. Paste your API token (Settings → Browser extension) and CrawlOps URL.' },
-      { n: 2, title: 'Log in normally', body: 'Open the platform in your own browser and log in — handle any 2FA/CAPTCHA yourself.' },
-      { n: 3, title: 'Send the session', body: 'Click the extension → Send session to CrawlOps. The crawler now browses logged-in as that account.' },
-      { n: 4, title: 'Add a proxy', body: 'Sources → proxy pool → add a residential proxy. Even logged in, a datacenter IP gets challenged. Use dedicated accounts.' },
+      { n: 1, title: 'Option A — Log in inside CrawlOps', body: 'Sources → stealth sessions → "Log in here". A live anti-detect browser opens the real login page inside CrawlOps; click and type your credentials (and 2FA / CAPTCHA) on it, then Save session. Nothing is stored except the resulting session.', tip: 'Easiest — no browser extension needed.' },
+      { n: 2, title: 'Option B — Browser extension', body: 'Load browser-extension/ (chrome://extensions → Load unpacked), paste your API token, log into the platform in your own browser, then click the extension → Send session.' },
+      { n: 3, title: 'Add a proxy', body: 'Sources → proxy pool → add a residential proxy. Even logged in, a datacenter IP gets challenged. Use dedicated accounts, not personal ones.' },
+      { n: 4, title: 'Crawl', body: 'Once a session shows "cookies set", the crawler browses that platform logged-in on the topic\'s next cycle.' },
     ],
     Fig: FigConnect,
   },

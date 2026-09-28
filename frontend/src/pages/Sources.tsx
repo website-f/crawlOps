@@ -1,5 +1,6 @@
-import { IconAlertTriangle, IconCheck, IconSettings, IconSnowflake, IconX } from '@tabler/icons-react'
+import { IconAlertTriangle, IconCheck, IconLogin2, IconSettings, IconSnowflake, IconX } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
+import LoginBrowser from '../components/LoginBrowser'
 import { PlatformBadge } from '../components/PlatformIcon'
 import { del, get, post, put } from '../lib/api'
 
@@ -71,6 +72,7 @@ export default function Sources() {
   const [sessPlatform, setSessPlatform] = useState('facebook')
   const [cookieTarget, setCookieTarget] = useState<number | null>(null)
   const [cookieJson, setCookieJson] = useState('')
+  const [loginPlatform, setLoginPlatform] = useState<string | null>(null)
 
   const reload = () => {
     get<Source[]>('/sources').then(setSources)
@@ -158,13 +160,17 @@ export default function Sources() {
           </table>
 
           <div className="text-sm font-medium mt-4 mb-2">Stealth sessions <span className="text-muted font-normal">(one per platform account; import cookies to go live)</span></div>
-          <div className="flex gap-2 mb-2">
+          <div className="flex gap-2 mb-2 flex-wrap">
             <select value={sessPlatform} onChange={(e) => setSessPlatform(e.target.value)}
               className="border border-grid rounded-lg px-2 py-1.5 text-sm">
-              {['facebook', 'instagram', 'tiktok', 'x'].map((p) => <option key={p} value={p}>{p}</option>)}
+              {['facebook', 'instagram', 'tiktok', 'x', 'threads'].map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
+            <button onClick={() => setLoginPlatform(sessPlatform)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2a78d6] text-white text-sm active:scale-[0.98]">
+              <IconLogin2 size={15} stroke={2} />Log in here
+            </button>
             <button onClick={() => post('/sources/stealth-sessions', { platform: sessPlatform, label: `${sessPlatform} account` }).then(reload)}
-              className="px-3 py-1.5 rounded-lg bg-ink text-white text-sm">Add session</button>
+              className="px-3 py-1.5 rounded-lg border border-grid text-sm">Empty session</button>
           </div>
           {sessions.map((s: any) => {
             const statusColor = s.status === 'needs_reauth' ? 'text-[#d03b3b]'
@@ -216,6 +222,12 @@ export default function Sources() {
       {editing && (
         <ConfigEditor sourceId={editing.id} connector={editing.connector}
           onDone={() => { setEditing(null); reload() }} />
+      )}
+
+      {loginPlatform && (
+        <LoginBrowser platform={loginPlatform}
+          onClose={() => setLoginPlatform(null)}
+          onDone={() => { setLoginPlatform(null); reload() }} />
       )}
 
       {cookieTarget !== null && (

@@ -22,6 +22,13 @@ export async function api<T = any>(path: string, opts?: RequestInit): Promise<T>
   return r.json()
 }
 
+/** Authenticated image fetch → object URL (for live frames behind auth). */
+export async function blobUrl(path: string): Promise<string> {
+  const r = await fetch(`/api${path}`, { headers: authHeaders() })
+  if (!r.ok) throw new Error(`${r.status}`)
+  return URL.createObjectURL(await r.blob())
+}
+
 /** Authenticated file download (blob) — for CSV export, since <a> can't send headers. */
 export async function download(path: string, filename: string): Promise<void> {
   const r = await fetch(`/api${path}`, { headers: authHeaders() })

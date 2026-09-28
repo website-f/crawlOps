@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     camofox_url: str = "http://camofox:9377"
     camofox_access_key: str = ""
     camofox_api_key: str = "crawlops_camofox_cookiekey"  # enables cookie import
+    loginsvc_url: str = "http://loginsvc:8500"
     rsshub_url: str = "http://rsshub:1200"
 
     threads_access_token: str = ""

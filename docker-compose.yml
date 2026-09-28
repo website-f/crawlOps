@@ -117,6 +117,13 @@ services:
     expose:
       - "9377"
 
+  loginsvc:
+    build: ./loginsvc
+    restart: unless-stopped
+    shm_size: "1gb"
+    expose:
+      - "8500"
+
   rsshub:
     image: diygod/rsshub:latest
     restart: unless-stopped
