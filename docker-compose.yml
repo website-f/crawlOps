@@ -121,7 +121,8 @@ services:
 
   camofox:
     build:
-      context: https://github.com/jo-inc/camofox-browser.git
+      # pinned: upstream HEAD (v1.17.0) runs `npm ci` before copying postinstall.js and fails to build
+      context: https://github.com/jo-inc/camofox-browser.git#v1.16.0
     restart: unless-stopped
     environment:
       CAMOFOX_ACCESS_KEY: ${CAMOFOX_ACCESS_KEY:-}
