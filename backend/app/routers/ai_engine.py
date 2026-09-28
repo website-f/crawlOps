@@ -59,6 +59,10 @@ def update_provider(pid: int, body: ProviderIn, db: Session = Depends(get_db)):
     p.task_models, p.available_models = body.task_models, body.available_models
     p.priority, p.enabled, p.tier = body.priority, body.enabled, body.tier
     if body.api_key:  # only overwrite the key when a new one is supplied
+        if not decrypt(p.api_key_enc):
+            # presets are seeded disabled with no key; adding the first key is the
+            # operator switching the provider on, so don't leave it silently off
+            p.enabled = True
         p.api_key_enc = encrypt(body.api_key)
     db.commit()
     return _dump(p)

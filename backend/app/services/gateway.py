@@ -57,11 +57,25 @@ class Gateway:
                                 "key": key, "model": model})
         return out
 
+    def _why_none(self, task: str) -> str:
+        """Say which of enabled / key / model is missing, instead of a bare 'none'."""
+        from ..db import SessionLocal
+        from ..models import AIProvider
+        from .crypto import decrypt
+        with SessionLocal() as db:
+            rows = db.query(AIProvider).all()
+        ready_but_off = [p.name for p in rows if not p.enabled
+                         and (p.task_models or {}).get(task) and decrypt(p.api_key_enc)]
+        if ready_but_off:
+            return (f"no enabled provider for '{task}' — {', '.join(ready_but_off)} "
+                    f"has a key and model but is disabled; enable it in AI Engine")
+        return f"no provider configured for '{task}' — add a key and pick a '{task}' model in AI Engine"
+
     async def chat(self, task: str, messages: list[dict], max_tokens: int = 800,
                    temperature: float = 0.1, json_mode: bool = False) -> tuple[str, dict]:
         providers = self._providers_for(task)
         if not providers:
-            raise GatewayUnavailable(f"no provider configured for '{task}'")
+            raise GatewayUnavailable(self._why_none(task))
         last_err = "all providers cooling/failing"
         for p in providers:
             if self._cooling(p["id"]):
@@ -115,7 +129,10 @@ class Gateway:
                                           json={"model": p["model"], "input": texts},
                                           headers={"Authorization": f"Bearer {p['key']}"})
                 if r.status_code != 200:
-                    self._cool(p["id"], 300)
+                    # only rate/auth/server errors mean the provider is unwell; a 400/404
+                    # (usually a chat model picked for embed) must not cool it for judge too
+                    if r.status_code in (401, 403, 429) or r.status_code >= 500:
+                        self._cool(p["id"], 300)
                     continue
                 data = r.json()
                 self._record("embed", p["name"], p["model"],
