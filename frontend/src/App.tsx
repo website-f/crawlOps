@@ -4,22 +4,24 @@ import {
   IconPlanet, IconPlug, IconScale, IconSettings, IconTargetArrow, IconUserOff,
   IconUsersGroup, IconX,
 } from '@tabler/icons-react'
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { clearToken, get, getToken } from './lib/api'
-import AIEngine from './pages/AIEngine'
-import Alerts from './pages/Alerts'
-import Analytics from './pages/Analytics'
-import Competitors from './pages/Competitors'
-import Feed from './pages/Feed'
-import Galaxy from './pages/Galaxy'
 import Login from './pages/Login'
-import MapView from './pages/MapView'
-import SettingsPage from './pages/Settings'
-import Sources from './pages/Sources'
-import Suppression from './pages/Suppression'
-import Topics from './pages/Topics'
-import Tutorial from './pages/Tutorial'
+
+// pages load on demand so three.js / leaflet / recharts stay out of the first paint
+const AIEngine = lazy(() => import('./pages/AIEngine'))
+const Alerts = lazy(() => import('./pages/Alerts'))
+const Analytics = lazy(() => import('./pages/Analytics'))
+const Competitors = lazy(() => import('./pages/Competitors'))
+const Feed = lazy(() => import('./pages/Feed'))
+const Galaxy = lazy(() => import('./pages/Galaxy'))
+const MapView = lazy(() => import('./pages/MapView'))
+const SettingsPage = lazy(() => import('./pages/Settings'))
+const Sources = lazy(() => import('./pages/Sources'))
+const Suppression = lazy(() => import('./pages/Suppression'))
+const Topics = lazy(() => import('./pages/Topics'))
+const Tutorial = lazy(() => import('./pages/Tutorial'))
 
 const GROUPS: { label: string; items: { to: string; label: string; Icon: any }[] }[] = [
   {
@@ -133,6 +135,7 @@ function Shell() {
       )}
 
       <main className="flex-1 min-w-0 p-4 lg:p-6 max-w-[1500px] w-full mx-auto lg:mx-0">
+        <Suspense fallback={<div className="py-20 grid place-items-center text-muted">Loading…</div>}>
         <Routes>
           <Route path="/" element={<Feed />} />
           <Route path="/topics" element={<Topics />} />
@@ -151,6 +154,7 @@ function Shell() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/tutorial" element={<Tutorial />} />
         </Routes>
+        </Suspense>
       </main>
     </div>
   )

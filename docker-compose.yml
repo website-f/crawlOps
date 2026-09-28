@@ -3,6 +3,19 @@ name: crawlops
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
+    shm_size: "256mb"
+    # sized for a shared host: generous cache, bounded per-query memory
+    command: >
+      postgres
+      -c shared_buffers=${PG_SHARED_BUFFERS:-512MB}
+      -c effective_cache_size=${PG_EFFECTIVE_CACHE:-2GB}
+      -c work_mem=16MB
+      -c maintenance_work_mem=128MB
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c wal_compression=on
+      -c max_connections=150
     environment:
       POSTGRES_USER: crawlops
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crawlops_dev}
@@ -18,6 +31,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     command: redis-server --appendonly yes
     volumes:
       - redisdata:/data
@@ -29,13 +43,14 @@ services:
 
   meilisearch:
     image: getmeili/meilisearch:v1.12
+    restart: unless-stopped
     environment:
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-crawlops_meili_dev_key}
       MEILI_NO_ANALYTICS: "true"
     volumes:
       - meilidata:/meili_data
     ports:
-      - "${MEILI_PORT:-8403}:7700"
+      - "${BIND_ADDR:-127.0.0.1}:${MEILI_PORT:-8403}:7700"
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:7700/health || exit 1"]
       interval: 5s
@@ -44,6 +59,7 @@ services:
 
   minio:
     image: minio/minio:latest
+    restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-crawlops}
@@ -51,7 +67,7 @@ services:
     volumes:
       - miniodata:/data
     ports:
-      - "${MINIO_CONSOLE_PORT:-8404}:9001"
+      - "${BIND_ADDR:-127.0.0.1}:${MINIO_CONSOLE_PORT:-8404}:9001"
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 10s
@@ -74,9 +90,10 @@ services:
     env_file: [.env]
     environment:
       SERVICE_ROLE: api
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    # schema/seed runs per worker under a Postgres advisory lock, so N workers are safe
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${API_WORKERS:-2} --proxy-headers --forwarded-allow-ips=*
     ports:
-      - "${API_PORT:-8401}:8000"
+      - "${BIND_ADDR:-127.0.0.1}:${API_PORT:-8401}:8000"
 
   backend-worker:
     build: ./backend
@@ -93,10 +110,12 @@ services:
 
   frontend:
     build: ./frontend
+    restart: unless-stopped
     depends_on:
       - backend-api
     ports:
-      - "${FRONTEND_PORT:-8400}:80"
+      # the only port a reverse proxy needs; keep it on loopback behind one
+      - "${BIND_ADDR:-127.0.0.1}:${FRONTEND_PORT:-8400}:80"
 
   # ---- optional profiles ----
 
