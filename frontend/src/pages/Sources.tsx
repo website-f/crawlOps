@@ -68,6 +68,9 @@ export default function Sources() {
   const [proxyUrl, setProxyUrl] = useState('')
   const [proxyTag, setProxyTag] = useState('residential')
   const [editing, setEditing] = useState<{ id: number; connector: string } | null>(null)
+  const [sessPlatform, setSessPlatform] = useState('facebook')
+  const [cookieTarget, setCookieTarget] = useState<number | null>(null)
+  const [cookieJson, setCookieJson] = useState('')
 
   const reload = () => {
     get<Source[]>('/sources').then(setSources)
@@ -154,14 +157,31 @@ export default function Sources() {
             </tbody>
           </table>
 
-          <div className="text-sm font-medium mt-4 mb-2">Stealth sessions</div>
-          {sessions.map((s: any) => (
-            <div key={s.id} className="flex items-center gap-2 text-sm border-t border-grid/60 py-1.5">
-              <span className="capitalize">{s.platform}</span><span className="text-muted text-xs">{s.label}</span>
-              <span className="ml-auto text-xs">{s.status} · {s.daily_used}/{s.daily_cap} today</span>
-            </div>
-          ))}
-          {sessions.length === 0 && <div className="text-muted text-sm">No stealth sessions yet (Phase 3: import cookies per platform account).</div>}
+          <div className="text-sm font-medium mt-4 mb-2">Stealth sessions <span className="text-muted font-normal">(one per platform account; import cookies to go live)</span></div>
+          <div className="flex gap-2 mb-2">
+            <select value={sessPlatform} onChange={(e) => setSessPlatform(e.target.value)}
+              className="border border-grid rounded-lg px-2 py-1.5 text-sm">
+              {['facebook', 'instagram', 'tiktok', 'x'].map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <button onClick={() => post('/sources/stealth-sessions', { platform: sessPlatform, label: `${sessPlatform} account` }).then(reload)}
+              className="px-3 py-1.5 rounded-lg bg-ink text-white text-sm">Add session</button>
+          </div>
+          {sessions.map((s: any) => {
+            const statusColor = s.status === 'needs_reauth' ? 'text-[#d03b3b]'
+              : s.status === 'resting' ? 'text-[#b45309]' : 'text-muted'
+            return (
+              <div key={s.id} className="flex items-center gap-2 text-sm border-t border-grid/60 py-1.5">
+                <span className="capitalize">{s.platform}</span>
+                <span className={`text-[10px] px-1.5 rounded-full ${s.has_cookies ? 'bg-[#0ca30c]/10 text-[#006300]' : 'bg-grid text-inksec'}`}>
+                  {s.has_cookies ? 'cookies set' : 'no cookies'}
+                </span>
+                <span className={`ml-auto text-xs ${statusColor}`}>{s.status} · {s.daily_used}/{s.daily_cap}</span>
+                <button onClick={() => { setCookieTarget(s.id); setCookieJson('') }} className="text-xs text-[#2a78d6]">cookies</button>
+                <button onClick={() => del(`/sources/stealth-sessions/${s.id}`).then(reload)} className="text-xs text-red-700">del</button>
+              </div>
+            )
+          })}
+          {sessions.length === 0 && <div className="text-muted text-sm">No stealth sessions yet. Add one, import its account cookies, and run the stealth profile.</div>}
         </div>
 
         <div className="bg-white border border-grid rounded-2xl p-4">
@@ -196,6 +216,32 @@ export default function Sources() {
       {editing && (
         <ConfigEditor sourceId={editing.id} connector={editing.connector}
           onDone={() => { setEditing(null); reload() }} />
+      )}
+
+      {cookieTarget !== null && (
+        <div className="fixed inset-0 z-50 grid place-items-center p-4">
+          <div className="absolute inset-0 bg-ink/30" onClick={() => setCookieTarget(null)} />
+          <div className="relative bg-white rounded-2xl border border-grid shadow-xl w-full max-w-lg p-5">
+            <h3 className="font-semibold mb-1">Import session cookies</h3>
+            <p className="text-sm text-inksec mb-3">
+              Paste the account's cookies as a JSON array (export with a cookie-editor extension).
+              They are pushed into camofox under this session's sticky identity.
+            </p>
+            <textarea rows={7} value={cookieJson} onChange={(e) => setCookieJson(e.target.value)}
+              placeholder='[{"name":"c_user","value":"...","domain":".facebook.com"}, ...]'
+              className="w-full border border-grid rounded-lg px-3 py-2 font-mono text-[12px]" />
+            <div className="flex gap-2 justify-end mt-3">
+              <button onClick={() => setCookieTarget(null)} className="px-4 py-1.5 text-sm text-inksec">Cancel</button>
+              <button onClick={async () => {
+                try {
+                  const cookies = JSON.parse(cookieJson)
+                  await post(`/sources/stealth-sessions/${cookieTarget}/cookies`, { cookies })
+                  setCookieTarget(null); reload()
+                } catch { alert('Invalid JSON or camofox not running (start with --profile stealth)') }
+              }} className="px-4 py-1.5 rounded-lg bg-ink text-white text-sm">Import</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

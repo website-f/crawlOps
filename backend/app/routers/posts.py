@@ -97,13 +97,3 @@ def export_csv(topic_id: int | None = None, platform: str = "", limit: int = 500
                     headers={"Content-Disposition": f"attachment; filename=crawlops-{stamp}.csv"})
 
 
-@router.get("/media/{key}")
-def media(key: str):
-    if "/" in key or ".." in key:
-        raise HTTPException(400)
-    try:
-        data, ctype = stream_object(key)
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(404, "media not cached") from e
-    return Response(content=data, media_type=ctype,
-                    headers={"Cache-Control": "public, max-age=604800"})

@@ -188,6 +188,42 @@ class AppSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class BenchmarkEntity(Base):
+    """A brand or competitor tracked for share-of-voice (Radar benchmark_entities)."""
+    __tablename__ = "benchmark_entities"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    topic_id: Mapped[int] = mapped_column(ForeignKey("topics.id"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    keywords: Mapped[list] = mapped_column(JSON, default=list)
+    is_own_brand: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class AIProvider(Base):
+    """A user-managed AI provider (OpenAI-compatible). Key stored encrypted.
+    `task_models` maps a pipeline task (judge|enrich|agent|embed) to a model id;
+    rotation tries providers by `priority` (low first) per task."""
+    __tablename__ = "ai_providers"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(60))
+    base_url: Mapped[str] = mapped_column(String(300))   # e.g. https://api.groq.com/openai/v1
+    api_key_enc: Mapped[str] = mapped_column(Text, default="")
+    task_models: Mapped[dict] = mapped_column(JSON, default=dict)  # {"judge":"llama-3.3-70b", ...}
+    available_models: Mapped[list] = mapped_column(JSON, default=list)
+    priority: Mapped[int] = mapped_column(Integer, default=100)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    tier: Mapped[str] = mapped_column(String(10), default="free")  # free|paid (label only)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class User(Base):
+    __tablename__ = "users"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(80), unique=True)
+    password_hash: Mapped[str] = mapped_column(String(200))
+    role: Mapped[str] = mapped_column(String(20), default="admin")  # admin | analyst | viewer
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class TokenUsage(Base):
     __tablename__ = "token_usage"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)

@@ -27,6 +27,18 @@ def _scope(topic_id: int | None, days: int, extra: list | None = None):
     return f
 
 
+def _kw_filter(keywords: list[str]):
+    """Radar kwFilter: OR of ILIKE over title+text. Empty = whole theme (no filter)."""
+    from sqlalchemy import or_
+    if not keywords:
+        return None
+    clauses = []
+    for k in keywords:
+        clauses.append(Post.text.ilike(f"%{k}%"))
+        clauses.append(Post.title.ilike(f"%{k}%"))
+    return or_(*clauses)
+
+
 def grade(score: float) -> str:
     if score >= 80:
         return "Excellent"
@@ -37,10 +49,14 @@ def grade(score: float) -> str:
     return "At risk"
 
 
-def brand_health(db: Session, topic_id: int | None, days: int = 14) -> dict:
+def brand_health(db: Session, topic_id: int | None, days: int = 14,
+                 keywords: list[str] | None = None) -> dict:
     """Composite 0-100 = 0.35 sentiment + 0.25 positivity + 0.20 momentum + 0.20 reach.
-    Faithful port of Radar healthFor()."""
+    Faithful port of Radar healthFor(). keywords scopes it to a brand (else whole theme)."""
     f = _scope(topic_id, days)
+    kw = _kw_filter(keywords or [])
+    if kw is not None:
+        f.append(kw)
     now = datetime.now(timezone.utc)
     mid = now - timedelta(days=days / 2)
 
@@ -191,6 +207,153 @@ def sentiment_flow(db: Session, topic_id: int | None, days: int = 30) -> dict:
         if t in topic_top and sent in ("pos", "neu", "neg"):
             links.append({"source": node_idx[f"t:{t}"], "target": node_idx[f"x:{sent}"], "value": n})
     return {"nodes": nodes, "links": links}
+
+
+def share_of_voice(db: Session, topic_id: int | None, entities: list, days: int = 30) -> dict:
+    """Volume per benchmark entity over a continuous day grid (streamgraph)."""
+    from datetime import date
+    start = (datetime.now(timezone.utc) - timedelta(days=days)).date()
+    grid = [(start + timedelta(days=i)).isoformat() for i in range(days + 1)]
+    rows_by_day = {d: {"day": d} for d in grid}
+    names = []
+    for ent in entities:
+        names.append(ent.name)
+        kws = ent.keywords or [ent.name]
+        f = _scope(topic_id, days)
+        kw = _kw_filter(kws)
+        if kw is not None:
+            f.append(kw)
+        daily = (db.query(func.date_trunc("day", Post.posted_at).label("d"), func.count())
+                 .filter(and_(*f)).group_by("d").all())
+        counts = {d.date().isoformat(): c for d, c in daily}
+        for d in grid:
+            rows_by_day[d][ent.name] = counts.get(d, 0)
+    return {"entities": names, "days": list(rows_by_day.values())}
+
+
+def benchmark_compare(db: Session, topic_id: int | None, entities: list, days: int = 14) -> list[dict]:
+    """Brand-vs-competitor-vs-market health comparison (Radar brandHealthReport)."""
+    out = [{"name": "Market (all)", "is_brand": False,
+            **brand_health(db, topic_id, days)}]
+    for ent in entities:
+        h = brand_health(db, topic_id, days, keywords=ent.keywords or [ent.name])
+        out.append({"name": ent.name, "is_brand": ent.is_own_brand,
+                    "score": h["score"], "grade": h["grade"], "total": h["total"]})
+    return sorted(out, key=lambda x: -x["score"])
+
+
+def heatmap(db: Session, topic_id: int | None, days: int = 30) -> list[list[int]]:
+    """day-of-week (Mon..Sun) x hour-of-day counts."""
+    f = _scope(topic_id, days)
+    rows = (db.query(func.extract("dow", Post.posted_at).label("dow"),
+                     func.extract("hour", Post.posted_at).label("hr"), func.count())
+            .filter(and_(*f)).group_by("dow", "hr").all())
+    grid = [[0] * 24 for _ in range(7)]  # rows Mon..Sun
+    for dow, hr, c in rows:
+        # postgres dow: 0=Sun..6=Sat -> reindex to 0=Mon..6=Sun
+        mon_idx = (int(dow) + 6) % 7
+        grid[mon_idx][int(hr)] = c
+    return grid
+
+
+def constellation(db: Session, topic_id: int | None, days: int = 30) -> dict:
+    """Topic co-occurrence graph: nodes=topics (freq+sentiment), edges=co-mention."""
+    f = _scope(topic_id, days)
+    freq = (db.query(func.jsonb_array_elements_text(Post.topics).label("t"),
+                     func.count(), func.coalesce(func.avg(Post.sentiment_score), 0))
+            .filter(and_(*f)).group_by("t")
+            .having(func.count() >= 3).order_by(func.count().desc()).limit(26).all())
+    keep = {t for t, _, _ in freq}
+    nodes = [{"topic": t, "freq": c, "sentiment": round(float(s), 2)} for t, c, s in freq]
+
+    # co-occurrence: pull topics arrays, count unordered pairs within kept set
+    rows = (db.query(Post.topics).filter(and_(*f))
+            .filter(func.jsonb_array_length(Post.topics) >= 2).limit(4000).all())
+    pair: dict = {}
+    for (topics,) in rows:
+        ts = sorted({t for t in (topics or []) if t in keep})
+        for i in range(len(ts)):
+            for j in range(i + 1, len(ts)):
+                pair[(ts[i], ts[j])] = pair.get((ts[i], ts[j]), 0) + 1
+    edges = [{"a": a, "b": b, "weight": w} for (a, b), w in pair.items() if w >= 2]
+    edges.sort(key=lambda e: -e["weight"])
+    return {"nodes": nodes, "edges": edges[:60]}
+
+
+def influencer_network(db: Session, topic_id: int | None, days: int = 30) -> dict:
+    """Top authors clustered by their dominant topic (co-topic tribes)."""
+    f = _scope(topic_id, days, [Post.author_key != ""])
+    rows = (db.query(Post.author_key, Post.author_name,
+                     func.count().label("posts"),
+                     func.coalesce(func.sum(func.coalesce(
+                         Post.engagement["likes"].as_float(), 0)), 0).label("eng"),
+                     func.coalesce(func.avg(Post.sentiment_score), 0).label("sent"),
+                     func.max(Post.platform).label("platform"))
+            .filter(and_(*f)).group_by(Post.author_key, Post.author_name)
+            .order_by(func.sum(func.coalesce(Post.engagement["likes"].as_float(), 0)).desc())
+            .limit(40).all())
+    if not rows:
+        return {"nodes": [], "edges": []}
+    max_eng = max(float(r.eng) for r in rows) or 1
+    nodes = []
+    for r in rows:
+        eng = float(r.eng)
+        tier = "mega" if eng >= max_eng * 0.5 else "macro" if eng >= max_eng * 0.15 else "micro"
+        nodes.append({"id": r.author_name or r.author_key, "platform": r.platform,
+                      "posts": r.posts, "engagement": round(eng),
+                      "sentiment": round(float(r.sent), 2), "tier": tier})
+    return {"nodes": nodes}
+
+
+def sentiment_waterfall(db: Session, topic_id: int | None, days: int = 30) -> list[dict]:
+    """Daily net sentiment (pos - neg) with running cumulative."""
+    f = _scope(topic_id, days)
+    rows = (db.query(func.date_trunc("day", Post.posted_at).label("d"),
+                     func.count().filter(Post.sentiment == "pos"),
+                     func.count().filter(Post.sentiment == "neg"))
+            .filter(and_(*f)).group_by("d").order_by("d").all())
+    out, cum = [], 0
+    for d, pos, neg in rows:
+        delta = (pos or 0) - (neg or 0)
+        prev = cum
+        cum += delta
+        out.append({"day": d.date().isoformat(), "delta": delta, "cumulative": cum,
+                    "base": min(prev, cum), "up": delta >= 0})
+    return out
+
+
+def forecast(db: Session, topic_id: int | None, days: int = 30, horizon: int = 7) -> dict:
+    """Least-squares projection of daily volume + negative-share early warning."""
+    f = _scope(topic_id, days)
+    rows = (db.query(func.date_trunc("day", Post.posted_at).label("d"), func.count(),
+                     func.count().filter(Post.sentiment == "neg"))
+            .filter(and_(*f)).group_by("d").order_by("d").all())
+    if len(rows) < 4:
+        return {"history": [], "projection": [], "trend": "flat", "confidence": "low"}
+    vols = [c for _, c, _ in rows]
+    n = len(vols)
+    xs = list(range(n))
+    mean_x = sum(xs) / n
+    mean_y = sum(vols) / n
+    denom = sum((x - mean_x) ** 2 for x in xs) or 1
+    slope = sum((xs[i] - mean_x) * (vols[i] - mean_y) for i in range(n)) / denom
+    intercept = mean_y - slope * mean_x
+    resid = [vols[i] - (intercept + slope * xs[i]) for i in range(n)]
+    rmse = (sum(r * r for r in resid) / n) ** 0.5
+    h = min(horizon, max(3, days // 2))
+    proj = []
+    for i in range(1, h + 1):
+        x = n - 1 + i
+        val = max(0, intercept + slope * x)
+        band = rmse * 1.28 * (1 + i * 0.06)
+        proj.append({"step": i, "value": round(val, 1),
+                     "low": round(max(0, val - band), 1), "high": round(val + band, 1)})
+    pct_per_week = (slope * 7 / mean_y * 100) if mean_y else 0
+    trend = "rising" if pct_per_week > 15 else "falling" if pct_per_week < -15 else "flat"
+    conf = "high" if abs(pct_per_week) < 5 or rmse < mean_y * 0.4 else "medium" if n >= 10 else "low"
+    return {"history": [{"day": d.date().isoformat(), "value": c} for d, c, _ in rows],
+            "projection": proj, "trend": trend, "pct_per_week": round(pct_per_week, 1),
+            "confidence": conf}
 
 
 def author_pyramid(db: Session, topic_id: int | None, days: int = 30) -> dict:

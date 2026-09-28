@@ -28,3 +28,19 @@ class TikTokStealth(StealthConnector):
 
     def search_url(self, term: str) -> str:
         return f"https://www.tiktok.com/search?q={quote(term)}"
+
+
+class XStealth(StealthConnector):
+    key = "x_stealth"
+    platform = "x"
+
+    def search_url(self, term: str) -> str:
+        return f"https://x.com/search?q={quote(term)}&f=live"
+
+
+class ThreadsStealth(StealthConnector):
+    key = "threads_stealth"
+    platform = "threads"
+
+    def search_url(self, term: str) -> str:
+        return f"https://www.threads.net/search?q={quote(term)}&serp_type=default"

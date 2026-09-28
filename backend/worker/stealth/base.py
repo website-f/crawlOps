@@ -1,36 +1,34 @@
 """Shared Tier-3 stealth connector base (docs/ALGORITHMS.md §3).
 
-Subclasses only supply a platform name and a search-URL builder. This base owns:
-session selection under daily cap, camofox tab lifecycle, human dwell pacing,
-snapshot extraction against the current selector map, and the AI-agent self-heal
-fallback when the layout changes.
+Flow: pick a ready session under its daily cap -> open the platform search page in
+camofox under the session's sticky identity -> read the TEXT accessibility snapshot
+-> if it's a login wall, raise LoginRequired (surfaced as an actionable source
+status) -> else extract posts. Extraction prefers the AI agent (the snapshot is
+LLM-optimized text) and falls back to a keyless text heuristic.
 
-All of this scrapes PUBLIC content only, at low per-session volume, and violates
-the target platforms' ToS — sessions/IPs get burned; the pool design absorbs it.
+Public search on Facebook/Instagram/TikTok/X/Threads is login-walled: an anonymous
+session sees only a "Log in" page, exactly like a human in incognito. Import an
+account's cookies (Sources -> stealth session -> cookies) to browse as that logged-in
+human. camofox defeats fingerprinting, not the login requirement itself.
 """
 import logging
+import re
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session as DbSession
 
-from app.models import SelectorPatch, StealthSession
+from app.models import StealthSession
 
 from ..connectors.base import Connector, RawMention
-from .camofox_client import CamofoxClient, SelectorBroken, human_dwell
+from .camofox_client import (CamofoxClient, LoginRequired, SelectorBroken,
+                             human_dwell, looks_like_login_wall)
 
 log = logging.getLogger("stealth")
-
-DEFAULT_SELECTORS = {
-    "post_container": "article",
-    "author": "link",
-    "text": "text",
-    "timestamp": "time",
-}
 
 
 class StealthConnector(Connector):
     tier = 3
-    search_terms_cap = 1  # keep per-session volume low
+    search_terms_cap = 1  # keep per-session volume low / human-like
 
     def __init__(self, db: DbSession | None = None):
         self.db = db
@@ -40,96 +38,99 @@ class StealthConnector(Connector):
         return True  # gated at runtime; listed so the Sources UI shows state
 
     def disabled_reason(self) -> str:
-        return f"Needs camofox (--profile stealth) + a ready {self.platform} session"
+        return f"Needs camofox running + a {self.platform} session with imported cookies"
 
     def search_url(self, term: str) -> str:
         raise NotImplementedError
+
+    def _pick_session(self):
+        """Least-recently-used ready session under its daily cap. Prefer sessions
+        that HAVE cookies (can see walled content) over bare public ones."""
+        q = (self.db.query(StealthSession)
+             .filter(StealthSession.platform == self.platform,
+                     StealthSession.status == "ready",
+                     StealthSession.daily_used < StealthSession.daily_cap)
+             .order_by(StealthSession.cookie_ref.isnot(None).desc(),
+                       StealthSession.last_used_at.asc().nulls_first()))
+        return q.first()
 
     async def fetch(self, cq) -> list[RawMention]:
         from app.services.boolean_query import to_api_terms
         if self.db is None:
             return []
-        session = (self.db.query(StealthSession)
-                   .filter(StealthSession.platform == self.platform,
-                           StealthSession.status == "ready",
-                           StealthSession.daily_used < StealthSession.daily_cap)
-                   .first())
+        session = self._pick_session()
         if session is None:
-            log.info("%s: no ready session under daily cap — skipping", self.platform)
+            log.info("%s: no ready session under daily cap", self.platform)
             return []
         if not await self.client.health():
-            log.info("%s: camofox not running (start with --profile stealth)", self.platform)
-            return []
+            raise RuntimeError("camofox not running (start the camofox service)")
 
         terms = to_api_terms(cq, self.search_terms_cap)
         if not terms:
             return []
-        tab = await self.client.open_tab(self.search_url(terms[0]),
-                                         user_id=f"{self.platform}-{session.id}")
+        has_cookies = bool(session.cookie_ref)
+        user_id = session.cookie_ref or f"{self.platform}-{session.id}"
+        tab = await self.client.open_tab(self.search_url(terms[0]), user_id)
         try:
             await human_dwell()
-            snap = await self.client.snapshot(tab)
-            posts = self._extract(snap)
+            snapshot, _ = await self.client.snapshot_text(tab, user_id)
             session.daily_used += 1
             session.last_used_at = datetime.now(timezone.utc)
+            if session.daily_used >= session.daily_cap:
+                session.status = "resting"  # rotate away; nightly resets it
             self.db.commit()
-            return posts
-        except SelectorBroken as e:
-            e.snapshot = snap if "snap" in dir() else {}  # hand snapshot to the agent
-            raise
+
+            if looks_like_login_wall(snapshot):
+                if has_cookies:
+                    # cookies present but still walled -> they expired
+                    session.status = "needs_reauth"
+                    self.db.commit()
+                    raise LoginRequired(
+                        f"{self.platform} session '{session.label}' cookies expired. "
+                        f"Re-import fresh cookies in Sources -> stealth session.")
+                raise LoginRequired(
+                    f"{self.platform} needs login. Import an account's cookies in "
+                    f"Sources -> stealth session to crawl logged-in.")
+
+            posts = _heuristic_extract(self.platform, snapshot)
+            if posts:
+                return posts
+            # no structured posts from the heuristic -> let the AI agent read the text
+            raise SelectorBroken(f"{self.platform}: heuristic found nothing", snapshot)
         finally:
-            await self.client.close_tab(tab)
-
-    def _extract(self, snapshot: dict) -> list[RawMention]:
-        nodes = _find_role(snapshot, "article")
-        if not nodes:
-            err = SelectorBroken(f"{self.platform}: no article nodes in snapshot")
-            err.snapshot = snapshot
-            raise err
-        out = []
-        for i, node in enumerate(nodes[:20]):
-            text = _text_of(node)[:1500]
-            if not text:
-                continue
-            author = _first_role_name(node, "link") or "unknown"
-            out.append(RawMention(
-                platform=self.platform,
-                native_id=f"{self.platform}:{hash(text) & 0xFFFFFFFF}:{i}",
-                url="", text=text, author_key=author, author_name=author,
-                posted_at=datetime.now(timezone.utc)))
-        return out
+            await self.client.close_tab(tab, user_id)
 
 
-def _find_role(node, role, out=None):
-    if out is None:
-        out = []
-    if isinstance(node, dict):
-        if node.get("role") == role:
-            out.append(node)
-        for c in node.get("children", []) or []:
-            _find_role(c, role, out)
-    elif isinstance(node, list):
-        for c in node:
-            _find_role(c, role, out)
+# --- keyless text extraction from the ARIA snapshot ---------------------------
+# The snapshot is indented text like:  - article "…":  \n  - link "author": …
+_ARTICLE = re.compile(r'^\s*-\s+article(?:\s+"([^"]*)")?\s*:?', re.M)
+_QUOTED = re.compile(r'"([^"]{12,})"')
+
+
+def _heuristic_extract(platform: str, snapshot: str) -> list[RawMention]:
+    """Best-effort keyless parse: pull article blocks (or long quoted strings) as posts."""
+    out: list[RawMention] = []
+    blocks = _split_articles(snapshot)
+    for i, block in enumerate(blocks[:20]):
+        text = " ".join(dict.fromkeys(_QUOTED.findall(block)))[:1500].strip()
+        if len(text) < 20:
+            continue
+        author = _first_link_name(block) or "unknown"
+        out.append(RawMention(
+            platform=platform, native_id=f"{platform}:{abs(hash(text)) & 0xFFFFFFFF}:{i}",
+            url="", text=text, author_key=author, author_name=author,
+            posted_at=datetime.now(timezone.utc)))
     return out
 
 
-def _text_of(node) -> str:
-    if not isinstance(node, dict):
-        return ""
-    parts = [str(node["name"])] if node.get("name") else []
-    for c in node.get("children", []) or []:
-        parts.append(_text_of(c))
-    return " ".join(p for p in parts if p).strip()
+def _split_articles(snapshot: str) -> list[str]:
+    idxs = [m.start() for m in _ARTICLE.finditer(snapshot)]
+    if not idxs:
+        return []
+    idxs.append(len(snapshot))
+    return [snapshot[idxs[i]:idxs[i + 1]] for i in range(len(idxs) - 1)]
 
 
-def _first_role_name(node, role) -> str:
-    if not isinstance(node, dict):
-        return ""
-    if node.get("role") == role and node.get("name"):
-        return str(node["name"])
-    for c in node.get("children", []) or []:
-        found = _first_role_name(c, role)
-        if found:
-            return found
-    return ""
+def _first_link_name(block: str) -> str:
+    m = re.search(r'-\s+link\s+"([^"]+)"', block)
+    return m.group(1) if m else ""

@@ -1,10 +1,36 @@
+const TOKEN_KEY = 'crawlops_token'
+export const getToken = () => localStorage.getItem(TOKEN_KEY)
+export const setToken = (t: string) => localStorage.setItem(TOKEN_KEY, t)
+export const clearToken = () => localStorage.removeItem(TOKEN_KEY)
+
+function authHeaders(): Record<string, string> {
+  const t = getToken()
+  return t ? { Authorization: `Bearer ${t}` } : {}
+}
+
 export async function api<T = any>(path: string, opts?: RequestInit): Promise<T> {
   const r = await fetch(`/api${path}`, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders(), ...(opts?.headers || {}) },
     ...opts,
   })
+  if (r.status === 401) {
+    clearToken()
+    if (!location.pathname.startsWith('/login')) location.href = '/login'
+    throw new Error('unauthorized')
+  }
   if (!r.ok) throw new Error(`${r.status}: ${await r.text()}`)
   return r.json()
+}
+
+/** Authenticated file download (blob) — for CSV export, since <a> can't send headers. */
+export async function download(path: string, filename: string): Promise<void> {
+  const r = await fetch(`/api${path}`, { headers: authHeaders() })
+  if (!r.ok) throw new Error(`${r.status}`)
+  const blob = await r.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = filename; a.click()
+  URL.revokeObjectURL(url)
 }
 
 export const get = <T = any>(path: string) => api<T>(path)

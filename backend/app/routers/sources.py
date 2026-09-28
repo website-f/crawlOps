@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..db import get_db
 from ..models import FetchRun, Proxy, Source, StealthSession
 from ..services.proxy_manager import proxy_manager
@@ -96,6 +97,96 @@ def delete_proxy(proxy_id: int, db: Session = Depends(get_db)):
 @router.get("/stealth-sessions")
 def stealth_sessions(db: Session = Depends(get_db)):
     return [{"id": s.id, "platform": s.platform, "label": s.label, "status": s.status,
+             "has_cookies": bool(s.cookie_ref),
              "daily_used": s.daily_used, "daily_cap": s.daily_cap,
              "last_used_at": s.last_used_at.isoformat() if s.last_used_at else None}
             for s in db.query(StealthSession).all()]
+
+
+class SessionIn(BaseModel):
+    platform: str
+    label: str = ""
+    daily_cap: int = 40
+    proxy_id: int | None = None
+
+
+@router.post("/stealth-sessions")
+def create_session(body: SessionIn, db: Session = Depends(get_db)):
+    s = StealthSession(platform=body.platform, label=body.label,
+                       daily_cap=body.daily_cap, proxy_id=body.proxy_id, status="ready")
+    db.add(s)
+    db.commit()
+    return {"id": s.id}
+
+
+class CookieIn(BaseModel):
+    cookies: list[dict]  # [{name, value, domain, path?}]
+
+
+def _push_cookies(user_id: str, cookies: list[dict]) -> tuple[bool, str]:
+    """Open the session tab, then import cookies (gated by CAMOFOX_API_KEY)."""
+    import httpx
+    base = settings.camofox_url.rstrip("/")
+    try:
+        httpx.post(f"{base}/tabs",
+                   json={"url": "about:blank", "userId": user_id, "sessionKey": user_id},
+                   timeout=40)
+        r = httpx.post(f"{base}/sessions/{user_id}/cookies", json={"cookies": cookies},
+                       headers={"Authorization": f"Bearer {settings.camofox_api_key}"}, timeout=25)
+        return (200 <= r.status_code < 300), r.text[:200]
+    except httpx.HTTPError as e:
+        return False, str(e)
+
+
+@router.post("/stealth-sessions/{sid}/cookies")
+def import_cookies(sid: int, body: CookieIn, db: Session = Depends(get_db)):
+    """Push auth cookies into camofox under the session's sticky userId."""
+    s = db.get(StealthSession, sid)
+    if not s:
+        raise HTTPException(404)
+    user_id = f"{s.platform}-{s.id}"
+    ok, detail = _push_cookies(user_id, body.cookies)
+    if ok:
+        s.cookie_ref = user_id
+        s.status = "ready"
+        db.commit()
+    return {"ok": ok, "detail": detail}
+
+
+class ConnectIn(BaseModel):
+    platform: str
+    cookies: list[dict]
+    label: str = ""
+
+
+@router.post("/connect")
+def connect_account(body: ConnectIn, db: Session = Depends(get_db)):
+    """One-shot 'log in from your browser' target for the CrawlOps extension:
+    finds or creates a session for the platform and imports the live cookies."""
+    s = (db.query(StealthSession)
+         .filter(StealthSession.platform == body.platform,
+                 StealthSession.cookie_ref.is_(None)).first())
+    if s is None:
+        s = StealthSession(platform=body.platform, label=body.label or f"{body.platform} account",
+                           status="ready", daily_cap=40)
+        db.add(s)
+        db.flush()
+    user_id = f"{s.platform}-{s.id}"
+    ok, detail = _push_cookies(user_id, body.cookies)
+    if ok:
+        s.cookie_ref = user_id
+        s.status = "ready"
+        if body.label:
+            s.label = body.label
+        db.commit()
+        return {"ok": True, "session_id": s.id, "imported": len(body.cookies)}
+    raise HTTPException(502, f"camofox cookie import failed: {detail}")
+
+
+@router.delete("/stealth-sessions/{sid}")
+def delete_session(sid: int, db: Session = Depends(get_db)):
+    s = db.get(StealthSession, sid)
+    if s:
+        db.delete(s)
+        db.commit()
+    return {"ok": True}

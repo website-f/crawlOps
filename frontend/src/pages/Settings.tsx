@@ -1,6 +1,6 @@
-import { IconDeviceFloppy, IconSend } from '@tabler/icons-react'
+import { IconCopy, IconDeviceFloppy, IconPuzzle, IconSend, IconTrash, IconUserPlus } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
-import { get, post, put } from '../lib/api'
+import { del, get, getToken, post, put } from '../lib/api'
 
 interface AllSettings {
   cpm: Record<string, number>
@@ -8,12 +8,21 @@ interface AllSettings {
   pipeline: { default_threshold: number; retention_days: number }
 }
 
+interface AppUser { id: number; username: string; role: string }
+
 export default function Settings() {
   const [s, setS] = useState<AllSettings | null>(null)
   const [saved, setSaved] = useState('')
   const [testResult, setTestResult] = useState('')
+  const [users, setUsers] = useState<AppUser[] | null>(null)
+  const [nu, setNu] = useState({ username: '', password: '', role: 'analyst' })
 
-  useEffect(() => { get<AllSettings>('/settings').then(setS) }, [])
+  useEffect(() => {
+    get<AllSettings>('/settings').then(setS)
+    get<AppUser[]>('/auth/users').then(setUsers).catch(() => setUsers(null)) // 403 for non-admins
+  }, [])
+
+  const reloadUsers = () => get<AppUser[]>('/auth/users').then(setUsers).catch(() => {})
 
   const save = async (key: keyof AllSettings) => {
     if (!s) return
@@ -113,6 +122,57 @@ export default function Settings() {
           ))}
         </div>
       </section>
+
+      <section className="bg-white border border-grid rounded-2xl p-5">
+        <h3 className="font-semibold mb-1 inline-flex items-center gap-1.5"><IconPuzzle size={16} stroke={2} />Browser extension</h3>
+        <p className="text-sm text-inksec mb-3">
+          Install <code>browser-extension/</code> (chrome://extensions → Developer mode → Load unpacked),
+          then paste this token + your CrawlOps URL into it. Log into a platform in your browser and click
+          the extension to connect that account. No cookie copying.
+        </p>
+        <label className="block text-sm">API token for the extension
+          <div className="flex gap-2 mt-1">
+            <input readOnly value={getToken() || ''}
+              className="flex-1 border border-grid rounded-lg px-3 py-2 font-mono text-[12px] bg-plane" />
+            <button onClick={() => navigator.clipboard.writeText(getToken() || '')}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-ink text-white text-sm active:scale-[0.98]">
+              <IconCopy size={14} stroke={2} />Copy
+            </button>
+          </div>
+        </label>
+        <p className="text-[11px] text-muted mt-1.5">Token rotates when you sign out and back in; re-paste it into the extension if it stops working.</p>
+      </section>
+
+      {users && (
+        <section className="bg-white border border-grid rounded-2xl p-5">
+          <h3 className="font-semibold mb-1">Users</h3>
+          <p className="text-sm text-inksec mb-3">Admins manage access. Roles: admin, analyst, viewer.</p>
+          <div className="flex flex-wrap gap-2 mb-3">
+            <input value={nu.username} onChange={(e) => setNu({ ...nu, username: e.target.value })}
+              placeholder="username" className="border border-grid rounded-lg px-3 py-1.5 text-sm" />
+            <input type="password" value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })}
+              placeholder="password" className="border border-grid rounded-lg px-3 py-1.5 text-sm" />
+            <select value={nu.role} onChange={(e) => setNu({ ...nu, role: e.target.value })}
+              className="border border-grid rounded-lg px-2 py-1.5 text-sm">
+              <option value="admin">admin</option><option value="analyst">analyst</option><option value="viewer">viewer</option>
+            </select>
+            <button onClick={() => post('/auth/users', nu).then(() => { setNu({ username: '', password: '', role: 'analyst' }); reloadUsers() }).catch((e) => alert(String(e.message)))}
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-ink text-white text-sm active:scale-[0.98]">
+              <IconUserPlus size={14} stroke={2} />Add user
+            </button>
+          </div>
+          <div className="divide-y divide-grid/60">
+            {users.map((u) => (
+              <div key={u.id} className="flex items-center gap-3 py-2 text-sm">
+                <span className="font-medium">{u.username}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-grid text-inksec">{u.role}</span>
+                <button onClick={() => del(`/auth/users/${u.id}`).then(reloadUsers)}
+                  className="ml-auto text-inksec hover:text-red-700"><IconTrash size={14} stroke={2} /></button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   )
 }

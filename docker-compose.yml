@@ -58,26 +58,8 @@ services:
       timeout: 5s
       retries: 10
 
-  litellm:
-    image: ghcr.io/berriai/litellm:main-stable
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgresql://crawlops:${POSTGRES_PASSWORD:-crawlops_dev}@postgres:5432/litellm
-      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-crawlops-master-dev}
-      STORE_MODEL_IN_DB: "true"
-      GROQ_API_KEY: ${GROQ_API_KEY:-}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
-      HUGGINGFACE_API_KEY: ${HUGGINGFACE_API_KEY:-}
-      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-    command: ["--config", "/app/config.yaml", "--port", "4000"]
-    volumes:
-      - ./litellm/config.yaml:/app/config.yaml:ro
-    ports:
-      - "${LITELLM_PORT:-8402}:4000"
+  # LiteLLM removed — AI rotation is now our own DB-driven gateway (Settings → AI Engine).
+  # Provider keys are stored encrypted in Postgres, not in env.
 
   backend-api:
     build: ./backend
@@ -119,11 +101,12 @@ services:
   # ---- optional profiles ----
 
   camofox:
-    profiles: ["stealth"]
     build:
       context: https://github.com/jo-inc/camofox-browser.git
+    restart: unless-stopped
     environment:
       CAMOFOX_ACCESS_KEY: ${CAMOFOX_ACCESS_KEY:-}
+      CAMOFOX_API_KEY: ${CAMOFOX_API_KEY:-crawlops_camofox_cookiekey}
       PROXY_STRATEGY: ${PROXY_STRATEGY:-}
       PROXY_BACKCONNECT_HOST: ${PROXY_BACKCONNECT_HOST:-}
       PROXY_BACKCONNECT_PORT: ${PROXY_BACKCONNECT_PORT:-}
@@ -135,8 +118,8 @@ services:
       - "9377"
 
   rsshub:
-    profiles: ["extras"]
     image: diygod/rsshub:latest
+    restart: unless-stopped
     environment:
       NODE_ENV: production
       CACHE_TYPE: redis

@@ -151,3 +151,28 @@ def flow(topic_id: int | None = None, days: int = 30, db: Session = Depends(get_
 @router.get("/pyramid")
 def pyramid(topic_id: int | None = None, days: int = 30, db: Session = Depends(get_db)):
     return insights.author_pyramid(db, topic_id, days)
+
+
+@router.get("/heatmap")
+def heatmap(topic_id: int | None = None, days: int = 30, db: Session = Depends(get_db)):
+    return {"grid": insights.heatmap(db, topic_id, days)}
+
+
+@router.get("/constellation")
+def constellation(topic_id: int | None = None, days: int = 30, db: Session = Depends(get_db)):
+    return insights.constellation(db, topic_id, days)
+
+
+@router.get("/network")
+def network(topic_id: int | None = None, days: int = 30, db: Session = Depends(get_db)):
+    return insights.influencer_network(db, topic_id, days)
+
+
+@router.get("/waterfall")
+def waterfall(topic_id: int | None = None, days: int = 30, db: Session = Depends(get_db)):
+    return insights.sentiment_waterfall(db, topic_id, days)
+
+
+@router.get("/forecast")
+def forecast(topic_id: int | None = None, days: int = 30, db: Session = Depends(get_db)):
+    return insights.forecast(db, topic_id, days)

@@ -21,7 +21,7 @@ from app.services.settings_store import get_setting
 from .connectors import build
 from .connectors.base import ROUND_DELAY_S, RawMention
 from .prompts import build_judge_messages
-from .stealth.camofox_client import SelectorBroken
+from .stealth.camofox_client import LoginRequired, SelectorBroken
 
 log = logging.getLogger("pipeline")
 
@@ -60,6 +60,13 @@ async def run_topic(db: DbSession, topic: Topic) -> dict:
                 continue
             try:
                 mentions = await connector.fetch(cq)
+            except LoginRequired as e:
+                # not an error — the platform needs logged-in cookies for this session
+                source.status = "dormant"
+                source.last_error = str(e)
+                run.error = "login required"
+                db.commit()
+                continue
             except SelectorBroken as e:
                 mentions = await _heal_and_retry(db, source, e)
             run.found = len(mentions)
@@ -86,10 +93,9 @@ async def run_topic(db: DbSession, topic: Topic) -> dict:
 
 
 async def _heal_and_retry(db: DbSession, source: Source, err: SelectorBroken) -> list[RawMention]:
-    log.info("selectors broken for %s (%s) — invoking agent fallback", source.connector, err)
+    log.info("%s: heuristic empty — invoking AI agent on snapshot", source.platform)
     from .stealth.agent_fallback import agent_extract
-    snapshot = getattr(err, "snapshot", None) or {}
-    return await agent_extract(db, source.platform, snapshot)
+    return await agent_extract(db, source.platform, getattr(err, "snapshot", "") or "")
 
 
 async def _ingest(db: DbSession, topic: Topic, cq, mentions: list[RawMention],

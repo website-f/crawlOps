@@ -2,7 +2,7 @@ import { IconAdjustmentsHorizontal, IconAntennaOff, IconDownload, IconSearch } f
 import { useCallback, useEffect, useState } from 'react'
 import PostCard from '../components/cards/PostCard'
 import { PlatformIcon } from '../components/PlatformIcon'
-import { PostHit, get } from '../lib/api'
+import { PostHit, download, get } from '../lib/api'
 import { BRAND, FEED_TABS } from '../lib/platform'
 
 interface Topic { id: number; name: string }
@@ -97,12 +97,12 @@ export default function Feed() {
           <IconAdjustmentsHorizontal size={16} stroke={2} />
           <span className="hidden sm:inline">Filters</span>
         </button>
-        <a href={`/api/posts/export.csv${exportQuery()}`}
+        <button onClick={() => download(`/posts/export.csv${exportQuery()}`, 'crawlops.csv')}
           className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm border bg-white border-grid active:scale-[0.98]"
           title="Export current topic/platform to CSV">
           <IconDownload size={16} stroke={2} />
           <span className="hidden sm:inline">Export</span>
-        </a>
+        </button>
       </div>
 
       {showFilters && (

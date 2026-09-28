@@ -1,162 +1,179 @@
-"""AI gateway — wraps the LiteLLM proxy.
+"""AI gateway — our own multi-provider rotation (no LiteLLM).
 
-Rotation itself (free tiers first, cooldowns, fallback chains) is LiteLLM's job,
-configured in litellm/config.yaml. This wrapper adds: per-task virtual routing,
-JSON-schema-validated outputs with one retry, graceful degradation when every
-provider is exhausted, token accounting into Postgres, and test-connection pings.
+Providers live in the DB (ai_providers), keys encrypted. Every provider is called
+via the OpenAI-compatible /chat/completions + /embeddings shape, which OpenAI,
+DeepSeek, Groq, OpenRouter, Mistral, HuggingFace router, Together, etc. all speak.
+
+Per task (judge|enrich|agent|embed) we try enabled providers in `priority` order
+(low first), skipping ones cooling down after a recent 429/limit/auth error, until
+one succeeds. Usage is recorded to token_usage for the monitor.
 """
-import json
 import logging
-import re
+import time
 
 import httpx
+import redis
 
 from ..config import settings
 
 log = logging.getLogger("gateway")
 
-# maps provider name -> a deployment model_name from litellm/config.yaml used to test it
-PROVIDER_TEST_MODEL = {
-    "groq": "judge",
-    "openrouter": "judge-fb1",
-    "mistral": "judge-fb2",
-    "huggingface": "judge-fb3",
-    "deepseek": "judge-fb4",
-    "openai": "judge-fb5",
-}
-
-_PROVIDER_RE = re.compile(r"^(groq|openrouter|mistral|huggingface|deepseek|openai)/")
-
 
 class GatewayUnavailable(Exception):
-    """All providers exhausted / gateway down — caller should defer, not crash."""
-
-
-def _provider_of(model: str) -> str:
-    m = _PROVIDER_RE.match(model or "")
-    return m.group(1) if m else (model or "unknown").split("/")[0]
+    """No provider could serve the task (none configured, or all cooling/failing)."""
 
 
 class Gateway:
     def __init__(self):
-        self.base = settings.litellm_url.rstrip("/")
-        self.headers = {"Authorization": f"Bearer {settings.litellm_master_key}"}
-        self._down_until = 0.0  # circuit breaker: skip calls while rotation is dry
+        self._redis = None
+
+    @property
+    def redis(self):
+        if self._redis is None:
+            self._redis = redis.Redis.from_url(settings.redis_url, decode_responses=True)
+        return self._redis
+
+    def _cooling(self, provider_id: int) -> bool:
+        return self.redis.exists(f"ai_cooldown:{provider_id}") == 1
+
+    def _cool(self, provider_id: int, seconds: int = 300) -> None:
+        self.redis.set(f"ai_cooldown:{provider_id}", "1", ex=seconds)
+
+    def _providers_for(self, task: str) -> list[dict]:
+        """Load enabled providers that declare a model for this task, priority order."""
+        from ..db import SessionLocal
+        from ..models import AIProvider
+        from .crypto import decrypt
+        out = []
+        with SessionLocal() as db:
+            rows = (db.query(AIProvider)
+                    .filter(AIProvider.enabled.is_(True))
+                    .order_by(AIProvider.priority.asc(), AIProvider.id.asc()).all())
+            for p in rows:
+                model = (p.task_models or {}).get(task)
+                key = decrypt(p.api_key_enc)
+                if model and key:
+                    out.append({"id": p.id, "name": p.name, "base_url": p.base_url.rstrip("/"),
+                                "key": key, "model": model})
+        return out
 
     async def chat(self, task: str, messages: list[dict], max_tokens: int = 800,
                    temperature: float = 0.1, json_mode: bool = False) -> tuple[str, dict]:
-        """Returns (content, usage_meta). Raises GatewayUnavailable when rotation is exhausted."""
-        import time
-        if time.monotonic() < self._down_until:
-            raise GatewayUnavailable("circuit open — rotation was dry recently")
-        body = {"model": task, "messages": messages,
-                "max_tokens": max_tokens, "temperature": temperature}
-        if json_mode:
-            body["response_format"] = {"type": "json_object"}
-        try:
-            async with httpx.AsyncClient(timeout=90) as client:
-                r = await client.post(f"{self.base}/v1/chat/completions",
-                                      json=body, headers=self.headers)
-        except httpx.HTTPError as e:
-            self._down_until = time.monotonic() + 300
-            raise GatewayUnavailable(f"litellm unreachable: {e}") from e
-        # 401/403: no provider keys configured (or bad master key) — same downstream
-        # handling as exhaustion: defer enrichment, retry via catch-up job.
-        if r.status_code in (401, 403, 429) or r.status_code >= 500:
-            self._down_until = time.monotonic() + 300
-            raise GatewayUnavailable(f"rotation unavailable ({r.status_code}): {r.text[:200]}")
-        r.raise_for_status()
-        data = r.json()
-        content = data["choices"][0]["message"]["content"] or ""
-        served = data.get("model", task)
-        usage = data.get("usage", {}) or {}
-        meta = {"task": task, "model": served, "provider": _provider_of(served),
-                "prompt_tokens": usage.get("prompt_tokens", 0),
-                "completion_tokens": usage.get("completion_tokens", 0)}
-        self._record(meta)
-        return content, meta
+        providers = self._providers_for(task)
+        if not providers:
+            raise GatewayUnavailable(f"no provider configured for '{task}'")
+        last_err = "all providers cooling/failing"
+        for p in providers:
+            if self._cooling(p["id"]):
+                continue
+            body = {"model": p["model"], "messages": messages,
+                    "max_tokens": max_tokens, "temperature": temperature}
+            if json_mode:
+                body["response_format"] = {"type": "json_object"}
+            try:
+                async with httpx.AsyncClient(timeout=90) as client:
+                    r = await client.post(f"{p['base_url']}/chat/completions", json=body,
+                                          headers={"Authorization": f"Bearer {p['key']}"})
+            except httpx.HTTPError as e:
+                last_err = f"{p['name']}: {e}"
+                self._cool(p["id"], 60)
+                continue
+            if r.status_code in (401, 403, 429) or r.status_code >= 500:
+                last_err = f"{p['name']}: {r.status_code} {r.text[:120]}"
+                self._cool(p["id"], 300)
+                continue
+            if r.status_code != 200:
+                last_err = f"{p['name']}: {r.status_code} {r.text[:120]}"
+                continue
+            data = r.json()
+            content = data["choices"][0]["message"]["content"] or ""
+            usage = data.get("usage", {}) or {}
+            self._record(task, p["name"], data.get("model", p["model"]),
+                         usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
+            return content, {"provider": p["name"], "model": p["model"]}
+        raise GatewayUnavailable(last_err)
 
     async def chat_json(self, task: str, messages: list[dict], max_tokens: int = 800) -> dict:
-        """chat() + parse JSON, one repair retry."""
         content, _ = await self.chat(task, messages, max_tokens=max_tokens, json_mode=True)
         try:
             return _extract_json(content)
         except ValueError:
             retry = messages + [
                 {"role": "assistant", "content": content},
-                {"role": "user", "content": "That was not valid JSON. Reply with ONLY the JSON object."},
-            ]
+                {"role": "user", "content": "That was not valid JSON. Reply with ONLY the JSON object."}]
             content, _ = await self.chat(task, retry, max_tokens=max_tokens, json_mode=True)
             return _extract_json(content)
 
     async def embed(self, texts: list[str]) -> list[list[float]] | None:
-        """Returns vectors, or None when no embedding provider is available (caller falls back to TF-IDF)."""
-        import time
-        if time.monotonic() < self._down_until:
-            return None
-        try:
-            async with httpx.AsyncClient(timeout=60) as client:
-                r = await client.post(f"{self.base}/v1/embeddings",
-                                      json={"model": "embed", "input": texts}, headers=self.headers)
-            if r.status_code != 200:
-                if r.status_code in (401, 403, 429) or r.status_code >= 500:
-                    self._down_until = time.monotonic() + 300
-                return None
-            data = r.json()
-            self._record({"task": "embed", "model": data.get("model", "embed"),
-                          "provider": _provider_of(data.get("model", "")),
-                          "prompt_tokens": (data.get("usage") or {}).get("prompt_tokens", 0),
-                          "completion_tokens": 0})
-            return [d["embedding"] for d in data["data"]]
-        except httpx.HTTPError:
-            return None
+        providers = self._providers_for("embed")
+        for p in providers:
+            if self._cooling(p["id"]):
+                continue
+            try:
+                async with httpx.AsyncClient(timeout=60) as client:
+                    r = await client.post(f"{p['base_url']}/embeddings",
+                                          json={"model": p["model"], "input": texts},
+                                          headers={"Authorization": f"Bearer {p['key']}"})
+                if r.status_code != 200:
+                    self._cool(p["id"], 300)
+                    continue
+                data = r.json()
+                self._record("embed", p["name"], p["model"],
+                             (data.get("usage") or {}).get("prompt_tokens", 0), 0)
+                return [d["embedding"] for d in data["data"]]
+            except httpx.HTTPError:
+                self._cool(p["id"], 60)
+        return None  # caller falls back to TF-IDF
 
-    async def test_provider(self, provider: str) -> dict:
-        model = PROVIDER_TEST_MODEL.get(provider)
-        if not model:
-            return {"provider": provider, "ok": False, "error": "unknown provider"}
-        import time
+    async def test_provider(self, base_url: str, api_key: str, model: str) -> dict:
         t0 = time.monotonic()
         try:
             async with httpx.AsyncClient(timeout=30) as client:
-                r = await client.post(
-                    f"{self.base}/v1/chat/completions", headers=self.headers,
-                    json={"model": model, "messages": [{"role": "user", "content": "ping"}],
-                          "max_tokens": 2,
-                          # pin to the exact deployment, don't let fallbacks mask a dead key
-                          "fallbacks": []})
+                r = await client.post(f"{base_url.rstrip('/')}/chat/completions",
+                                      headers={"Authorization": f"Bearer {api_key}"},
+                                      json={"model": model, "max_tokens": 2,
+                                            "messages": [{"role": "user", "content": "ping"}]})
             ms = int((time.monotonic() - t0) * 1000)
             if r.status_code == 200:
-                served = r.json().get("model", model)
-                return {"provider": provider, "ok": True, "latency_ms": ms, "served_model": served}
-            return {"provider": provider, "ok": False, "latency_ms": ms,
-                    "error": f"{r.status_code}: {r.text[:200]}"}
+                return {"ok": True, "latency_ms": ms, "served_model": r.json().get("model", model)}
+            return {"ok": False, "latency_ms": ms, "error": f"{r.status_code}: {r.text[:160]}"}
         except httpx.HTTPError as e:
-            return {"provider": provider, "ok": False, "error": str(e)}
+            return {"ok": False, "error": str(e)}
 
-    def _record(self, meta: dict) -> None:
-        """Token accounting — best-effort, never blocks the pipeline."""
+    async def list_models(self, base_url: str, api_key: str) -> list[str]:
+        try:
+            async with httpx.AsyncClient(timeout=25) as client:
+                r = await client.get(f"{base_url.rstrip('/')}/models",
+                                     headers={"Authorization": f"Bearer {api_key}"})
+            if r.status_code != 200:
+                return []
+            data = r.json().get("data", [])
+            return sorted(m.get("id") for m in data if m.get("id"))
+        except httpx.HTTPError:
+            return []
+
+    def _record(self, task, provider, model, prompt_tokens, completion_tokens):
         try:
             from ..db import SessionLocal
             from ..models import TokenUsage
             with SessionLocal() as db:
-                db.add(TokenUsage(task=meta["task"], model=meta["model"],
-                                  provider=meta["provider"],
-                                  prompt_tokens=meta["prompt_tokens"],
-                                  completion_tokens=meta["completion_tokens"]))
+                db.add(TokenUsage(task=task, model=model, provider=provider,
+                                  prompt_tokens=prompt_tokens or 0,
+                                  completion_tokens=completion_tokens or 0))
                 db.commit()
         except Exception:  # noqa: BLE001
             log.warning("token usage record failed", exc_info=True)
 
 
 def _extract_json(text: str) -> dict:
-    text = text.strip()
+    import json
+    import re
+    text = (text or "").strip()
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.S)
-    start = text.find("{")
-    end = text.rfind("}")
+    start, end = text.find("{"), text.rfind("}")
     if start == -1 or end == -1:
-        raise ValueError("no JSON object found")
+        raise ValueError("no JSON object")
     return json.loads(text[start:end + 1])
 
 

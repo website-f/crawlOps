@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "CrawlOps Connector",
+  "version": "1.0.0",
+  "description": "Send your logged-in social session (Facebook, Instagram, TikTok, X, Threads) to CrawlOps with one click.",
+  "permissions": ["cookies", "activeTab", "storage", "tabs"],
+  "host_permissions": [
+    "https://*.facebook.com/*",
+    "https://*.instagram.com/*",
+    "https://*.tiktok.com/*",
+    "https://*.x.com/*",
+    "https://*.twitter.com/*",
+    "https://*.threads.net/*",
+    "https://*.threads.com/*",
+    "http://*/*",
+    "https://*/*"
+  ],
+  "action": { "default_popup": "popup.html", "default_title": "CrawlOps Connector" }
+}

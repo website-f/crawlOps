@@ -91,8 +91,23 @@ def purge_retention(db: Session) -> int:
     return len(ids)
 
 
+def recover_sessions(db: Session) -> int:
+    """Daily: reset per-session usage and revive rested sessions (needs_reauth stays)."""
+    from app.models import StealthSession
+    rows = db.query(StealthSession).all()
+    revived = 0
+    for s in rows:
+        s.daily_used = 0
+        if s.status == "resting":
+            s.status = "ready"
+            revived += 1
+    db.commit()
+    return revived
+
+
 async def run_nightly(db: Session) -> dict:
-    stats = {"purged": purge_retention(db), "merged": 0, "labeled": 0}
+    stats = {"purged": purge_retention(db), "merged": 0, "labeled": 0,
+             "sessions_revived": recover_sessions(db)}
     for topic in db.query(Topic).all():
         stats["merged"] += merge_clusters(db, topic.id)
         stats["labeled"] += await polish_labels(db, topic.id)

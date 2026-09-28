@@ -13,12 +13,17 @@ class Settings(BaseSettings):
     litellm_master_key: str = "sk-crawlops-master-dev"
     camofox_url: str = "http://camofox:9377"
     camofox_access_key: str = ""
+    camofox_api_key: str = "crawlops_camofox_cookiekey"  # enables cookie import
     rsshub_url: str = "http://rsshub:1200"
 
     threads_access_token: str = ""
     youtube_api_key: str = ""
     reddit_client_id: str = ""
     reddit_client_secret: str = ""
+
+    admin_user: str = "admin"
+    admin_password: str = "crawlops-change-me"
+    secret_key: str = "crawlops-secret-change-me"  # encrypts provider API keys at rest
 
     allow_direct_stealth: bool = False
     judge_threshold_default: int = 55
