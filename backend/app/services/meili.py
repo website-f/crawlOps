@@ -77,3 +77,10 @@ def delete_post(post_id: int) -> None:
         client().index(INDEX).delete_document(post_id)
     except Exception:  # noqa: BLE001
         log.warning("meili delete failed for %s", post_id)
+
+
+def delete_topic_posts(topic_id: int) -> None:
+    try:
+        client().index(INDEX).delete_documents(filter=f"topic_id = {int(topic_id)}")
+    except Exception:  # noqa: BLE001
+        log.warning("meili delete failed for topic %s", topic_id)

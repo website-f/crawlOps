@@ -2,10 +2,13 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import Topic
+from ..models import (AlertEvent, AlertRule, BenchmarkEntity, Cluster, Post,
+                      PostMetric, Topic)
+from ..services import meili
 from ..services.boolean_query import compile_query, to_boolean_string
 from ..services.gateway import GatewayUnavailable, gateway
 
@@ -57,9 +60,21 @@ def update_topic(topic_id: int, body: TopicIn, db: Session = Depends(get_db)):
 @router.delete("/{topic_id}")
 def delete_topic(topic_id: int, db: Session = Depends(get_db)):
     t = db.get(Topic, topic_id)
-    if t:
-        db.delete(t)
-        db.commit()
+    if not t:
+        return {"ok": True}
+    # children first — the FKs have no ON DELETE CASCADE, so a topic that has
+    # crawled anything would otherwise fail with a ForeignKeyViolation
+    post_ids = select(Post.id).where(Post.topic_id == topic_id)
+    rule_ids = select(AlertRule.id).where(AlertRule.topic_id == topic_id)
+    db.execute(delete(PostMetric).where(PostMetric.post_id.in_(post_ids)))
+    db.execute(delete(Post).where(Post.topic_id == topic_id))
+    db.execute(delete(AlertEvent).where(AlertEvent.rule_id.in_(rule_ids)))
+    db.execute(delete(AlertRule).where(AlertRule.topic_id == topic_id))
+    db.execute(delete(Cluster).where(Cluster.topic_id == topic_id))
+    db.execute(delete(BenchmarkEntity).where(BenchmarkEntity.topic_id == topic_id))
+    db.delete(t)
+    db.commit()
+    meili.delete_topic_posts(topic_id)
     return {"ok": True}
 
 
