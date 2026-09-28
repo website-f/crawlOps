@@ -1,0 +1,86 @@
+# CrawlOps AI rotation — model groups per pipeline task.
+# Order inside each fallback chain = rotation priority (free tiers first,
+# paid last). Free model IDs churn; edit here or via the AI Engine UI.
+
+model_list:
+  # ---------- judge (relevance + sentiment, needs solid JSON output) ----------
+  - model_name: judge
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: os.environ/GROQ_API_KEY
+  - model_name: judge-fb1
+    litellm_params:
+      model: openrouter/meta-llama/llama-3.3-70b-instruct:free
+      api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: judge-fb2
+    litellm_params:
+      model: mistral/mistral-small-latest
+      api_key: os.environ/MISTRAL_API_KEY
+  - model_name: judge-fb3
+    litellm_params:
+      model: huggingface/meta-llama/Llama-3.3-70B-Instruct
+      api_key: os.environ/HUGGINGFACE_API_KEY
+  - model_name: judge-fb4
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+  - model_name: judge-fb5
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  # ---------- enrich (cheap bulk tasks: labels, cluster titles) ----------
+  - model_name: enrich
+    litellm_params:
+      model: groq/llama-3.1-8b-instant
+      api_key: os.environ/GROQ_API_KEY
+  - model_name: enrich-fb1
+    litellm_params:
+      model: openrouter/meta-llama/llama-3.2-3b-instruct:free
+      api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: enrich-fb2
+    litellm_params:
+      model: mistral/mistral-small-latest
+      api_key: os.environ/MISTRAL_API_KEY
+  - model_name: enrich-fb3
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+
+  # ---------- agent (browser-use fallback; needs reliable tool calling) ----------
+  - model_name: agent
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+  - model_name: agent-fb1
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  # ---------- embed (clustering vectors) ----------
+  - model_name: embed
+    litellm_params:
+      model: mistral/mistral-embed
+      api_key: os.environ/MISTRAL_API_KEY
+  - model_name: embed-fb1
+    litellm_params:
+      model: openai/text-embedding-3-small
+      api_key: os.environ/OPENAI_API_KEY
+
+router_settings:
+  num_retries: 1
+  allowed_fails: 2
+  cooldown_time: 300            # seconds a rate-limited deployment sits out
+  fallbacks:
+    - judge: ["judge-fb1", "judge-fb2", "judge-fb3", "judge-fb4", "judge-fb5"]
+    - enrich: ["enrich-fb1", "enrich-fb2", "enrich-fb3"]
+    - agent: ["agent-fb1"]
+    - embed: ["embed-fb1"]
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  store_model_in_db: true
+
+litellm_settings:
+  drop_params: true             # strip params a provider doesn't support instead of erroring
+  json_logs: true

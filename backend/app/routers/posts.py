@@ -1,0 +1,109 @@
+import csv
+import io
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy.orm import Session
+
+from ..db import get_db
+from ..models import Post, SuppressedAuthor
+from ..services import meili
+from ..services.media_cache import stream_object
+
+router = APIRouter(prefix="/api", tags=["posts"])
+
+
+@router.get("/posts")
+def feed(q: str = "", platform: str = "", topic_id: int | None = None,
+         sentiment: str = "", lang: str = "", has_media: bool | None = None,
+         min_engagement: int = 0, since_ts: int | None = None, until_ts: int | None = None,
+         verified: bool | None = None, sort: str = "posted_ts:desc",
+         page: int = Query(1, ge=1), per_page: int = Query(30, le=100),
+         db: Session = Depends(get_db)):
+    filters = ["is_hidden = false"]
+    if platform:
+        ors = " OR ".join(f"platform = '{p.strip()}'" for p in platform.split(",") if p.strip().isalnum())
+        if ors:
+            filters.append(f"({ors})")
+    if topic_id:
+        filters.append(f"topic_id = {topic_id}")
+    if sentiment in ("pos", "neu", "neg"):
+        filters.append(f"sentiment = '{sentiment}'")
+    if lang.isalpha() and len(lang) <= 8:
+        filters.append(f"lang = '{lang}'")
+    if has_media is not None:
+        filters.append(f"has_media = {'true' if has_media else 'false'}")
+    if min_engagement > 0:
+        filters.append(f"engagement_total >= {min_engagement}")
+    if since_ts:
+        filters.append(f"posted_ts >= {int(since_ts)}")
+    if until_ts:
+        filters.append(f"posted_ts <= {int(until_ts)}")
+    if verified is not None:
+        filters.append(f"author_verified = {'true' if verified else 'false'}")
+
+    # watch-mode suppression: exclude from analytics but keep visible -> flag only
+    watch_keys = {f"{s.platform}:{s.author_key}" for s in
+                  db.query(SuppressedAuthor).filter(SuppressedAuthor.mode == "watch").all()}
+
+    if sort not in ("posted_ts:desc", "posted_ts:asc", "engagement_total:desc",
+                    "relevance:desc", "reach:desc"):
+        sort = "posted_ts:desc"
+    try:
+        res = meili.search(q, filters, sort, page, per_page)
+    except Exception as e:  # noqa: BLE001 - meili down -> clear error, not a 500 traceback
+        raise HTTPException(503, f"search unavailable: {e}") from e
+    hits = res.get("hits", [])
+    for h in hits:
+        h["suppression_watch"] = f"{h.get('platform')}:{h.get('author_key')}" in watch_keys
+    return {"hits": hits, "total": res.get("totalHits", len(hits)),
+            "page": page, "per_page": per_page}
+
+
+@router.get("/posts/geo")
+def geo_posts(topic_id: int | None = None, db: Session = Depends(get_db)):
+    q = db.query(Post).filter(Post.lat.isnot(None), Post.is_hidden.is_(False))
+    if topic_id:
+        q = q.filter(Post.topic_id == topic_id)
+    return [{"id": p.id, "lat": p.lat, "lon": p.lon, "platform": p.platform,
+             "title": p.title or (p.text or "")[:120], "sentiment": p.sentiment,
+             "url": p.url} for p in q.limit(3000).all()]
+
+
+@router.get("/posts/export.csv")
+def export_csv(topic_id: int | None = None, platform: str = "", limit: int = 5000,
+               db: Session = Depends(get_db)):
+    q = db.query(Post).filter(Post.is_hidden.is_(False))
+    if topic_id:
+        q = q.filter(Post.topic_id == topic_id)
+    if platform:
+        q = q.filter(Post.platform == platform)
+    rows = q.order_by(Post.posted_at.desc()).limit(min(limit, 20000)).all()
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["platform", "posted_at", "author", "handle", "title", "text",
+                "url", "lang", "sentiment", "relevance", "reach", "emv",
+                "likes", "comments", "shares", "topics"])
+    for p in rows:
+        e = p.engagement or {}
+        w.writerow([p.platform, p.posted_at.isoformat() if p.posted_at else "",
+                    p.author_name, p.author_handle, p.title, (p.text or "").replace("\n", " "),
+                    p.url, p.lang, p.sentiment or "", p.relevance or "", p.reach or "",
+                    p.emv or "", e.get("likes", 0), e.get("comments", 0), e.get("shares", 0),
+                    "; ".join(p.topics or [])])
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return Response(content=buf.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": f"attachment; filename=crawlops-{stamp}.csv"})
+
+
+@router.get("/media/{key}")
+def media(key: str):
+    if "/" in key or ".." in key:
+        raise HTTPException(400)
+    try:
+        data, ctype = stream_object(key)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(404, "media not cached") from e
+    return Response(content=data, media_type=ctype,
+                    headers={"Cache-Control": "public, max-age=604800"})

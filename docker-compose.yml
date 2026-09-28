@@ -1,0 +1,155 @@
+name: crawlops
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: crawlops
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crawlops_dev}
+      POSTGRES_DB: crawlops
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./deploy/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crawlops"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.12
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-crawlops_meili_dev_key}
+      MEILI_NO_ANALYTICS: "true"
+    volumes:
+      - meilidata:/meili_data
+    ports:
+      - "${MEILI_PORT:-8403}:7700"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:7700/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-crawlops}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-crawlops_dev_secret}
+    volumes:
+      - miniodata:/data
+    ports:
+      - "${MINIO_CONSOLE_PORT:-8404}:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://crawlops:${POSTGRES_PASSWORD:-crawlops_dev}@postgres:5432/litellm
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-crawlops-master-dev}
+      STORE_MODEL_IN_DB: "true"
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      HUGGINGFACE_API_KEY: ${HUGGINGFACE_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    volumes:
+      - ./litellm/config.yaml:/app/config.yaml:ro
+    ports:
+      - "${LITELLM_PORT:-8402}:4000"
+
+  backend-api:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+    env_file: [.env]
+    environment:
+      SERVICE_ROLE: api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "${API_PORT:-8401}:8000"
+
+  backend-worker:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file: [.env]
+    environment:
+      SERVICE_ROLE: worker
+    command: python -m worker.main
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - backend-api
+    ports:
+      - "${FRONTEND_PORT:-8400}:80"
+
+  # ---- optional profiles ----
+
+  camofox:
+    profiles: ["stealth"]
+    build:
+      context: https://github.com/jo-inc/camofox-browser.git
+    environment:
+      CAMOFOX_ACCESS_KEY: ${CAMOFOX_ACCESS_KEY:-}
+      PROXY_STRATEGY: ${PROXY_STRATEGY:-}
+      PROXY_BACKCONNECT_HOST: ${PROXY_BACKCONNECT_HOST:-}
+      PROXY_BACKCONNECT_PORT: ${PROXY_BACKCONNECT_PORT:-}
+      PROXY_USERNAME: ${PROXY_USERNAME:-}
+      PROXY_PASSWORD: ${PROXY_PASSWORD:-}
+    volumes:
+      - camofox_cookies:/home/node/.camofox/cookies
+    expose:
+      - "9377"
+
+  rsshub:
+    profiles: ["extras"]
+    image: diygod/rsshub:latest
+    environment:
+      NODE_ENV: production
+      CACHE_TYPE: redis
+      REDIS_URL: redis://redis:6379/2
+    depends_on:
+      redis:
+        condition: service_healthy
+    expose:
+      - "1200"
+
+volumes:
+  pgdata:
+  redisdata:
+  meilidata:
+  miniodata:
+  camofox_cookies:
