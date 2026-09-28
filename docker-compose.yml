@@ -57,19 +57,22 @@ services:
       timeout: 3s
       retries: 20
 
+  # S3 media cache. MinIO stopped publishing free images (Docker Hub + quay both
+  # refuse pulls), so this is RustFS, an S3/MinIO-API compatible server. The service
+  # keeps the name "minio" so MINIO_URL / MINIO_ROOT_* keep working unchanged.
   minio:
-    image: minio/minio:latest
+    image: rustfs/rustfs:1.0.0
     restart: unless-stopped
-    command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-crawlops}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-crawlops_dev_secret}
+      RUSTFS_ACCESS_KEY: ${MINIO_ROOT_USER:-crawlops}
+      RUSTFS_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-crawlops_dev_secret}
+      RUSTFS_CONSOLE_ENABLE: "true"
     volumes:
       - miniodata:/data
     ports:
       - "${BIND_ADDR:-127.0.0.1}:${MINIO_CONSOLE_PORT:-8404}:9001"
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD-SHELL", "curl -fs http://localhost:9000/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
