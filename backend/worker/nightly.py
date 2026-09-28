@@ -91,6 +91,20 @@ def purge_retention(db: Session) -> int:
     return len(ids)
 
 
+def backfill_countries(db: Session) -> int:
+    """Derive country for posts missing one, from their domain ccTLD (keyless)."""
+    from app.services.countries import country_from_domain, country_name
+    rows = (db.query(Post).filter(Post.country.is_(None), Post.domain != "").limit(5000).all())
+    n = 0
+    for p in rows:
+        cc = country_from_domain(p.domain)
+        if cc:
+            p.country, p.country_name = cc, country_name(cc)
+            n += 1
+    db.commit()
+    return n
+
+
 def recover_sessions(db: Session) -> int:
     """Daily: reset per-session usage and revive rested sessions (needs_reauth stays)."""
     from app.models import StealthSession
@@ -107,7 +121,8 @@ def recover_sessions(db: Session) -> int:
 
 async def run_nightly(db: Session) -> dict:
     stats = {"purged": purge_retention(db), "merged": 0, "labeled": 0,
-             "sessions_revived": recover_sessions(db)}
+             "sessions_revived": recover_sessions(db),
+             "countries_backfilled": backfill_countries(db)}
     for topic in db.query(Topic).all():
         stats["merged"] += merge_clusters(db, topic.id)
         stats["labeled"] += await polish_labels(db, topic.id)

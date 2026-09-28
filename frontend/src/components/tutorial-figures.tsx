@@ -176,6 +176,41 @@ export function FigConnect() {
   )
 }
 
+// The data pipeline as a visual flow: Sources -> Crawl -> AI Judge -> Store -> Surfaces.
+export function FlowDiagram() {
+  const stages: { x: number; title: string; sub: string; color: string }[] = [
+    { x: 20, title: 'Sources', sub: 'news · social · research', color: '#2a78d6' },
+    { x: 175, title: 'Crawl', sub: 'free API + stealth browser', color: '#1baf7a' },
+    { x: 330, title: 'AI Judge', sub: 'relevance · sentiment · topics', color: '#4a3aa7' },
+    { x: 485, title: 'Store', sub: 'Postgres · search · media', color: '#eda100' },
+    { x: 640, title: 'Surface', sub: 'feed · analytics · alerts', color: '#eb6834' },
+  ]
+  const W = 135, H = 74, y = 70
+  return (
+    <svg viewBox="0 0 795 190" className="w-full">
+      <style>{`@keyframes dash{to{stroke-dashoffset:-16}} .flow{stroke-dasharray:6 6;animation:dash 1s linear infinite}
+        @media (prefers-reduced-motion: reduce){.flow{animation:none}}`}</style>
+      {stages.slice(0, -1).map((s, i) => (
+        <line key={i} className="flow" x1={s.x + W} y1={y + H / 2} x2={stages[i + 1].x} y2={y + H / 2}
+          stroke="#c3c2b7" strokeWidth={2} />
+      ))}
+      {stages.map((s, i) => (
+        <g key={s.title}>
+          <rect x={s.x} y={y} width={W} height={H} rx={12} fill="#fff" stroke={GRID} />
+          <rect x={s.x} y={y} width={5} height={H} rx={2} fill={s.color} />
+          <circle cx={s.x + 24} cy={y + 24} r={7} fill={s.color} />
+          <text x={s.x + 16} y={y + 48} fontSize={14} fontWeight={700} fill={INK}>{s.title}</text>
+          <text x={s.x + 16} y={y + 64} fontSize={9.5} fill={MUT}>{s.sub}</text>
+          <text x={s.x + W / 2} y={y - 12} textAnchor="middle" fontSize={11} fontWeight={700} fill={s.color}>{i + 1}</text>
+        </g>
+      ))}
+      <text x={397} y={175} textAnchor="middle" fontSize={11} fill={SEC}>
+        You set a topic → CrawlOps gathers, judges, and enriches every post → you read, filter, and act on it.
+      </text>
+    </svg>
+  )
+}
+
 export function FigGalaxyFig() {
   return (
     <Frame active="Overview" h={300}>

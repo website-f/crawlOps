@@ -7,9 +7,10 @@ import { SENTIMENT } from '../lib/platform'
 
 ;(L as any)._crawlops = true
 
-interface GeoPost { id: number; lat: number; lon: number; platform: string; title: string; sentiment: 'pos' | 'neu' | 'neg' | null; url: string }
-interface CountryAgg { country: string; name: string; total: number; pos: number; neu: number; neg: number }
+interface Topic { id: number; name: string }
+interface CountryAgg { country: string; name: string; lat: number | null; lon: number | null; total: number; pos: number; neu: number; neg: number }
 interface RegionAgg { country: string; region: string; total: number; pos: number; neu: number; neg: number }
+interface GeoPost { id: number; lat: number; lon: number; platform: string; title: string; sentiment: 'pos' | 'neu' | 'neg' | null; url: string }
 
 function SentimentBar({ pos, neu, neg }: { pos: number; neu: number; neg: number }) {
   const total = pos + neu + neg || 1
@@ -21,46 +22,64 @@ function SentimentBar({ pos, neu, neg }: { pos: number; neu: number; neg: number
   )
 }
 
+const dominant = (c: { pos: number; neu: number; neg: number }) =>
+  c.neg > c.pos && c.neg >= c.neu ? 'neg' : c.pos > c.neg && c.pos >= c.neu ? 'pos' : 'neu'
+
 export default function MapView() {
-  const [posts, setPosts] = useState<GeoPost[]>([])
+  const [topics, setTopics] = useState<Topic[]>([])
+  const [topicId, setTopicId] = useState<number | ''>('')
   const [countries, setCountries] = useState<CountryAgg[]>([])
   const [regions, setRegions] = useState<RegionAgg[]>([])
+  const [posts, setPosts] = useState<GeoPost[]>([])
   const [focus, setFocus] = useState<string | null>(null)
 
+  useEffect(() => { get<Topic[]>('/topics').then(setTopics).catch(() => {}) }, [])
   useEffect(() => {
-    get<GeoPost[]>('/posts/geo').then(setPosts).catch(() => {})
-    get<{ countries: CountryAgg[]; regions: RegionAgg[] }>('/analytics/geo?days=90')
+    const scope = `?days=90${topicId ? `&topic_id=${topicId}` : ''}`
+    get<{ countries: CountryAgg[]; regions: RegionAgg[] }>(`/analytics/geo${scope}`)
       .then((d) => { setCountries(d.countries); setRegions(d.regions) }).catch(() => {})
-  }, [])
+    get<GeoPost[]>(`/posts/geo${topicId ? `?topic_id=${topicId}` : ''}`).then(setPosts).catch(() => {})
+  }, [topicId])
+
+  const withCoords = countries.filter((c) => c.lat != null && c.lon != null)
+  const maxTotal = Math.max(1, ...withCoords.map((c) => c.total))
 
   return (
     <div className="grid lg:grid-cols-[1fr_320px] gap-5">
       <div className="bg-white border border-grid rounded-2xl overflow-hidden">
         <div className="px-4 py-3 text-sm font-medium border-b border-grid flex items-center gap-3 flex-wrap">
           Geographic distribution
-          <span className="text-muted font-normal">{posts.length} geolocated posts</span>
-          <span className="ml-auto flex gap-3 text-xs">
-            {(['pos', 'neu', 'neg'] as const).map((k) => (
-              <span key={k} className="inline-flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-full" style={{ background: SENTIMENT[k].color }} />{SENTIMENT[k].label}
-              </span>
-            ))}
-          </span>
+          <span className="text-muted font-normal">{withCoords.length} countries · {posts.length} pinned posts</span>
+          <select value={topicId} onChange={(e) => setTopicId(e.target.value ? Number(e.target.value) : '')}
+            className="ml-auto border border-grid rounded-lg px-2 py-1 text-sm">
+            <option value="">All topics</option>
+            {topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
         </div>
-        <MapContainer center={[20, 20]} zoom={2} style={{ height: '68vh', width: '100%' }}>
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <MapContainer center={[20, 10]} zoom={2} style={{ height: '68vh', width: '100%' }} worldCopyJump>
+          <TileLayer attribution='&copy; OpenStreetMap' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+          {/* country-level markers (deterministic, works without AI) */}
+          {withCoords.map((c) => {
+            const d = dominant(c)
+            const radius = 8 + Math.sqrt(c.total / maxTotal) * 26
+            return (
+              <CircleMarker key={c.country} center={[c.lat!, c.lon!]} radius={radius}
+                pathOptions={{ color: '#fcfcfb', weight: 1.5, fillColor: SENTIMENT[d].color, fillOpacity: 0.55 }}
+                eventHandlers={{ click: () => setFocus(c.country) }}>
+                <Popup>
+                  <div className="text-sm">
+                    <b>{c.name}</b> — {c.total} mentions
+                    <div className="mt-1 w-40"><SentimentBar pos={c.pos} neu={c.neu} neg={c.neg} /></div>
+                  </div>
+                </Popup>
+              </CircleMarker>
+            )
+          })}
+          {/* precise post pins (only when AI has geocoded a location) */}
           {posts.map((p) => (
-            <CircleMarker key={p.id} center={[p.lat, p.lon]} radius={7}
-              pathOptions={{ color: '#fcfcfb', weight: 2,
-                fillColor: p.sentiment ? SENTIMENT[p.sentiment].color : '#898781', fillOpacity: 0.9 }}>
-              <Popup>
-                <div className="text-sm max-w-56">
-                  <b className="capitalize">{p.platform}</b>: {p.title}
-                  {p.url && <div><a href={p.url} target="_blank" rel="noreferrer" className="text-blue-600 underline">open original</a></div>}
-                </div>
-              </Popup>
+            <CircleMarker key={`p${p.id}`} center={[p.lat, p.lon]} radius={5}
+              pathOptions={{ color: '#0b0b0b', weight: 1, fillColor: p.sentiment ? SENTIMENT[p.sentiment].color : '#898781', fillOpacity: 0.9 }}>
+              <Popup><div className="text-sm max-w-56"><b className="capitalize">{p.platform}</b>: {p.title}</div></Popup>
             </CircleMarker>
           ))}
         </MapContainer>
@@ -80,7 +99,7 @@ export default function MapView() {
                 <SentimentBar pos={c.pos} neu={c.neu} neg={c.neg} />
               </button>
             ))}
-            {!countries.length && <div className="text-muted text-sm py-6 text-center">No geolocated posts yet. The judge extracts locations, then Nominatim resolves them.</div>}
+            {!countries.length && <div className="text-muted text-sm py-6 text-center">No geolocated posts yet. Country is derived from each source's domain — news and web sources populate this automatically once crawled.</div>}
           </div>
         </div>
 
@@ -90,13 +109,11 @@ export default function MapView() {
             <div className="space-y-2 max-h-64 overflow-y-auto">
               {regions.filter((r) => r.country === focus).map((r) => (
                 <div key={r.region} className="text-sm">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span>{r.region}</span><span className="ml-auto tabular-nums text-inksec">{r.total}</span>
-                  </div>
+                  <div className="flex items-center gap-2 mb-1"><span>{r.region}</span><span className="ml-auto tabular-nums text-inksec">{r.total}</span></div>
                   <SentimentBar pos={r.pos} neu={r.neu} neg={r.neg} />
                 </div>
               ))}
-              {!regions.filter((r) => r.country === focus).length && <div className="text-muted text-sm">No region detail.</div>}
+              {!regions.filter((r) => r.country === focus).length && <div className="text-muted text-sm">Region detail needs AI-inferred locations.</div>}
             </div>
           </div>
         )}

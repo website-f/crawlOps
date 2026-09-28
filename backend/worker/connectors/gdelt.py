@@ -3,6 +3,7 @@ from urllib.parse import urlparse
 from dateutil import parser as dtparse
 
 from app.services.boolean_query import CompiledQuery, to_boolean_string
+from app.services.countries import fips_to_iso2
 
 from .base import Connector, RawMention, fetch_json
 
@@ -35,6 +36,7 @@ class Gdelt(Connector):
                 text=(a.get("title") or "")[:1500],
                 author_name=a.get("domain", ""), author_key=a.get("domain", ""),
                 domain=a.get("domain") or urlparse(url).netloc,
+                country=fips_to_iso2(a.get("sourcecountry", "")) or "",
                 posted_at=dtparse.parse(a["seendate"]) if a.get("seendate") else None,
                 lang=(a.get("language") or "")[:2].lower(),
                 media=media))

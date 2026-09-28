@@ -93,11 +93,17 @@ def geo(topic_id: int | None = None, days: int = 30, db: Session = Depends(get_d
                 agg[k][s] += c
         return agg
 
+    from ..services.countries import centroid, country_name as cname
     countries = split([Post.country, Post.country_name])
     regions = split([Post.country, Post.region])
+    out_countries = []
+    for k, v in sorted(countries.items(), key=lambda x: -x[1]["total"]):
+        cc = k[0]
+        cen = centroid(cc)
+        out_countries.append({"country": cc, "name": k[1] or cname(cc) or cc,
+                              "lat": cen[0] if cen else None, "lon": cen[1] if cen else None, **v})
     return {
-        "countries": [{"country": k[0], "name": k[1], **v}
-                      for k, v in sorted(countries.items(), key=lambda x: -x[1]["total"])],
+        "countries": out_countries,
         "regions": [{"country": k[0], "region": k[1], **v}
                     for k, v in sorted(regions.items(), key=lambda x: -x[1]["total"]) if k[1]][:100],
     }

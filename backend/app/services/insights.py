@@ -356,28 +356,66 @@ def forecast(db: Session, topic_id: int | None, days: int = 30, horizon: int = 7
             "confidence": conf}
 
 
-def galaxy(db: Session, topic_id: int | None, days: int = 7, limit: int = 600) -> dict:
-    """Conversation galaxy: each recent post = a star. angle by platform, radius by
-    age, size by engagement, hue by sentiment. Rendered as a canvas star-field."""
+PLATFORM_COLOR = {
+    "facebook": "#1877F2", "instagram": "#E4405F", "tiktok": "#69C9D0", "x": "#1DA1F2",
+    "threads": "#a78bfa", "reddit": "#FF4500", "bluesky": "#1185FE", "mastodon": "#6364FF",
+    "telegram": "#26A5E4", "hackernews": "#FF6600", "youtube": "#FF0000", "news": "#60a5fa",
+    "arxiv": "#B31B1B", "sec": "#3b82f6", "wikipedia": "#94a3b8", "github": "#c9d1d9",
+    "stackexchange": "#F48024", "clinicaltrials": "#2dd4bf", "appstore": "#0D96F6",
+    "factcheck": "#34d399", "podcast": "#a78bfa", "places": "#EA4335",
+}
+
+
+def galaxy(db: Session, topic_id: int | None, days: int = 7, limit: int = 700) -> dict:
+    """Conversation galaxy (Radar-faithful 3D solar system): sources = orbiting
+    planets, stars = per-post points, moons = sentiment split, outer belts = topics
+    + emerging trends. Returns the exact shape the three.js component consumes."""
     now = datetime.now(timezone.utc)
     f = _scope(topic_id, days)
     posts = (db.query(Post.platform, Post.sentiment_score, Post.posted_at,
                       func.coalesce(Post.engagement["likes"].as_float(), 0).label("eng"))
              .filter(and_(*f)).order_by(Post.posted_at.desc()).limit(limit).all())
-    platforms = sorted({p.platform for p in posts})
-    pidx = {p: i for i, p in enumerate(platforms)}
+
+    # sources = platforms with counts + brand colors, ordered by volume
+    counts: dict = {}
+    for p in posts:
+        counts[p.platform] = counts.get(p.platform, 0) + 1
+    ordered = sorted(counts, key=lambda k: -counts[k])
+    sidx = {p: i for i, p in enumerate(ordered)}
+    sources = [{"id": p, "label": p, "color": PLATFORM_COLOR.get(p, "#94a3b8"), "count": counts[p]}
+               for p in ordered]
+
     max_eng = max((float(p.eng) for p in posts), default=1) or 1
     max_age_h = max(days * 24, 1)
     stars = []
     for p in posts:
         age_h = (now - (p.posted_at or now)).total_seconds() / 3600
         stars.append({
-            "s": round(pidx[p.platform] / max(len(platforms), 1), 4),      # platform slot 0..1
-            "sent": round(max(-1, min(1, p.sentiment_score or 0)), 2),
-            "e": round((float(p.eng) / max_eng) ** 0.5, 3),               # size (sqrt-compressed)
-            "age": round(min(1, age_h / max_age_h), 3),                    # radius 0..1
+            "si": sidx[p.platform],
+            "s": round(max(-1, min(1, p.sentiment_score or 0)), 2),
+            "e": round((float(p.eng) / max_eng) ** 0.5, 3),
+            "age": round(min(1, age_h / max_age_h), 3),
         })
-    return {"stars": stars, "platforms": platforms}
+
+    # topics belt
+    topic_rows = (db.query(func.jsonb_array_elements_text(Post.topics).label("t"), func.count())
+                  .filter(and_(*f)).group_by("t").order_by(func.count().desc()).limit(14).all())
+    topics = [{"topic": t, "n": n} for t, n in topic_rows]
+
+    # trends belt = topics accelerating in the last day (reuse momentum)
+    trends = [{"topic": m["topic"], "score": max(1, m["acceleration"])}
+              for m in momentum_quadrant(db, topic_id, days) if m["acceleration"] > 0][:8]
+
+    health = brand_health(db, topic_id, min(days, 14))
+    avg_sent = db.query(func.coalesce(func.avg(Post.sentiment_score), 0)).filter(and_(*f)).scalar()
+    title = "All topics"
+    if topic_id:
+        from ..models import Topic
+        t = db.get(Topic, topic_id)
+        title = t.name if t else "Topic"
+    return {"title": title, "core": health["score"], "grade": health["grade"],
+            "total": len(posts), "avgSentiment": round(float(avg_sent or 0), 2),
+            "sources": sources, "stars": stars, "topics": topics, "trends": trends}
 
 
 def author_pyramid(db: Session, topic_id: int | None, days: int = 30) -> dict:

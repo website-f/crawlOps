@@ -39,6 +39,7 @@ class RawMention:
     posted_at: datetime | None = None
     lang: str = ""
     domain: str = ""
+    country: str = ""      # ISO-2, when the source declares it (e.g. GDELT)
     community: str = ""
     media: list = field(default_factory=list)      # [{kind: image|video, src_url, ...}]
     engagement: dict = field(default_factory=dict)  # {likes, comments, shares, views, reactions{}}

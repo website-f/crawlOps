@@ -14,6 +14,7 @@ from app.services.clustering import assign_cluster, vectorize
 from app.services.dedup import identity_key, near_duplicate, simhash64
 from app.services.gateway import GatewayUnavailable, gateway
 from app.services.geocode import geocode
+from app.services.countries import country_from_domain, country_from_url, country_name
 from app.services.media_cache import cache_media
 from app.services.scoring import estimate_emv, estimate_reach
 from app.services.settings_store import get_setting
@@ -141,6 +142,11 @@ async def _ingest(db: DbSession, topic: Topic, cq, mentions: list[RawMention],
             posted_at=m.posted_at or datetime.now(timezone.utc),
             media=media, engagement=m.engagement, simhash=sh, dup_group=dup_group,
         )
+        # deterministic geo (keyless, Radar-style): source-declared country (GDELT)
+        # first, then domain/url ccTLD. AI may refine with an inferred location later.
+        cc = (m.country or None) or country_from_domain(post.domain) or country_from_url(post.url)
+        if cc:
+            post.country, post.country_name = cc, country_name(cc)
         await _enrich(db, topic, post, m, cpm_table)
         db.add(post)
         db.flush()
@@ -203,8 +209,9 @@ async def _enrich(db: DbSession, topic: Topic, post: Post, m: RawMention,
         geo = await geocode(db, post.locations[0])
         if geo:
             post.lat, post.lon = geo["lat"], geo["lon"]
-            post.country, post.country_name = geo["country"], geo["country_name"]
             post.region, post.geo_confidence = geo["region"], geo["confidence"]
+            if not post.country:  # keep the deterministic source-country if already set
+                post.country, post.country_name = geo["country"], geo["country_name"]
 
     if not post.is_hidden:
         try:

@@ -27,8 +27,10 @@ def feed(q: str = "", platform: str = "", topic_id: int | None = None,
             filters.append(f"({ors})")
     if topic_id:
         filters.append(f"topic_id = {topic_id}")
-    if sentiment in ("pos", "neu", "neg"):
-        filters.append(f"sentiment = '{sentiment}'")
+    if sentiment:
+        sents = [s for s in sentiment.split(",") if s in ("pos", "neu", "neg")]
+        if sents:
+            filters.append("(" + " OR ".join(f"sentiment = '{s}'" for s in sents) + ")")
     if lang.isalpha() and len(lang) <= 8:
         filters.append(f"lang = '{lang}'")
     if has_media is not None:
