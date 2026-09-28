@@ -42,15 +42,23 @@ function FacebookCard({ p }: { p: PostHit }) {
             {p.author_name || 'Facebook user'}
             {p.author_verified && <IconRosetteDiscountCheckFilled size={14} className="inline ml-1 text-[#1877F2]" />}
           </div>
-          <div className="text-[12px] text-[#65676B] inline-flex items-center gap-1">
-            {ago(p.posted_ts)} <IconWorld size={11} stroke={2} />
-          </div>
+          {p.url ? (
+            <a href={p.url} target="_blank" rel="noreferrer" title="Open on Facebook"
+              className="text-[12px] text-[#65676B] inline-flex items-center gap-1 hover:underline">
+              {ago(p.posted_ts)} <IconWorld size={11} stroke={2} />
+            </a>
+          ) : (
+            <div className="text-[12px] text-[#65676B] inline-flex items-center gap-1">
+              {ago(p.posted_ts)} <IconWorld size={11} stroke={2} />
+            </div>
+          )}
         </div>
         <span className="ml-auto shrink-0"><PlatformPill platform="facebook" /></span>
       </div>
       <div className="mt-2.5 text-[15px] text-[#050505] whitespace-pre-wrap leading-snug">{p.text}</div>
       <MediaGrid p={p} />
-      <div className="flex items-center justify-between mt-2.5 pb-1 text-[13px] text-[#65676B]">
+      {/* crawled posts often carry no counts; show none rather than a row of fake zeros */}
+      {(e.likes || e.comments || e.shares) ? <div className="flex items-center justify-between mt-2.5 pb-1 text-[13px] text-[#65676B]">
         <span className="inline-flex items-center gap-1.5">
           <span className="w-[18px] h-[18px] rounded-full bg-[#1877F2] grid place-items-center">
             <IconThumbUp size={11} color="#fff" stroke={2.5} />
@@ -58,8 +66,8 @@ function FacebookCard({ p }: { p: PostHit }) {
           {fmtNum(e.likes || 0)}
         </span>
         <span>{fmtNum(e.comments || 0)} comments · {fmtNum(e.shares || 0)} shares</span>
-      </div>
-      <div className="flex border-t border-[#E4E6EB] pt-1 text-[#65676B] text-[13px] font-semibold">
+      </div> : null}
+      <div className="flex border-t border-[#E4E6EB] mt-2.5 pt-1 text-[#65676B] text-[13px] font-semibold">
         {[
           { label: 'Like', Icon: IconThumbUp },
           { label: 'Comment', Icon: IconMessageCircle },

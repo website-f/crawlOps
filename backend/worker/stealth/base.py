@@ -12,7 +12,6 @@ account's cookies (Sources -> stealth session -> cookies) to browse as that logg
 human. camofox defeats fingerprinting, not the login requirement itself.
 """
 import logging
-import re
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session as DbSession
@@ -22,6 +21,7 @@ from app.models import StealthSession
 from ..connectors.base import Connector, RawMention
 from .camofox_client import (CamofoxClient, LoginRequired, SelectorBroken,
                              human_dwell, looks_like_login_wall)
+from .snapshot_parse import extract_posts
 
 log = logging.getLogger("stealth")
 
@@ -92,45 +92,10 @@ class StealthConnector(Connector):
                     f"{self.platform} needs login. Import an account's cookies in "
                     f"Sources -> stealth session to crawl logged-in.")
 
-            posts = _heuristic_extract(self.platform, snapshot)
+            posts = extract_posts(self.platform, snapshot)
             if posts:
                 return posts
             # no structured posts from the heuristic -> let the AI agent read the text
             raise SelectorBroken(f"{self.platform}: heuristic found nothing", snapshot)
         finally:
             await self.client.close_tab(tab, user_id)
-
-
-# --- keyless text extraction from the ARIA snapshot ---------------------------
-# The snapshot is indented text like:  - article "…":  \n  - link "author": …
-_ARTICLE = re.compile(r'^\s*-\s+article(?:\s+"([^"]*)")?\s*:?', re.M)
-_QUOTED = re.compile(r'"([^"]{12,})"')
-
-
-def _heuristic_extract(platform: str, snapshot: str) -> list[RawMention]:
-    """Best-effort keyless parse: pull article blocks (or long quoted strings) as posts."""
-    out: list[RawMention] = []
-    blocks = _split_articles(snapshot)
-    for i, block in enumerate(blocks[:20]):
-        text = " ".join(dict.fromkeys(_QUOTED.findall(block)))[:1500].strip()
-        if len(text) < 20:
-            continue
-        author = _first_link_name(block) or "unknown"
-        out.append(RawMention(
-            platform=platform, native_id=f"{platform}:{abs(hash(text)) & 0xFFFFFFFF}:{i}",
-            url="", text=text, author_key=author, author_name=author,
-            posted_at=datetime.now(timezone.utc)))
-    return out
-
-
-def _split_articles(snapshot: str) -> list[str]:
-    idxs = [m.start() for m in _ARTICLE.finditer(snapshot)]
-    if not idxs:
-        return []
-    idxs.append(len(snapshot))
-    return [snapshot[idxs[i]:idxs[i + 1]] for i in range(len(idxs) - 1)]
-
-
-def _first_link_name(block: str) -> str:
-    m = re.search(r'-\s+link\s+"([^"]+)"', block)
-    return m.group(1) if m else ""

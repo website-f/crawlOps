@@ -4,6 +4,7 @@ The camofox snapshot is an LLM-optimized accessibility-tree text — camofox's w
 point is that an agent reads it. When the keyless heuristic finds nothing, we hand
 the snapshot text to the 'agent' model group to extract posts as JSON.
 """
+import hashlib
 import logging
 from datetime import datetime, timezone
 
@@ -46,7 +47,7 @@ async def agent_extract(db, platform: str, snapshot) -> list[RawMention]:
             continue
         author = (p.get("author") or "unknown").strip()
         out.append(RawMention(
-            platform=platform, native_id=f"agent:{abs(hash(body)) & 0xFFFFFFFF}:{i}",
+            platform=platform, native_id=f"agent:{hashlib.sha1(body.encode()).hexdigest()[:16]}",  # stable across restarts
             url=p.get("url", ""), text=body[:1500],
             author_key=author, author_name=author,
             posted_at=datetime.now(timezone.utc)))
