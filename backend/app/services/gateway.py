@@ -71,8 +71,29 @@ class Gateway:
                     f"has a key and model but is disabled; enable it in AI Engine")
         return f"no provider configured for '{task}' — add a key and pick a '{task}' model in AI Engine"
 
+    # Reasoning models (deepseek-flash, o-series, ...) spend max_tokens on hidden
+    # thinking first; a budget sized for the answer alone comes back empty with
+    # finish_reason=length. Such providers get this floor, remembered in Redis.
+    REASONING_BUDGET = 8000
+
+    def _is_reasoning(self, provider_id: int) -> bool:
+        return self.redis.exists(f"ai_reasoning:{provider_id}") == 1
+
+    async def _call(self, p: dict, messages: list[dict], max_tokens: int,
+                    temperature: float, json_mode: bool) -> httpx.Response:
+        body = {"model": p["model"], "messages": messages,
+                "max_tokens": max_tokens, "temperature": temperature}
+        if json_mode:
+            body["response_format"] = {"type": "json_object"}
+        async with httpx.AsyncClient(timeout=180) as client:
+            return await client.post(f"{p['base_url']}/chat/completions", json=body,
+                                     headers={"Authorization": f"Bearer {p['key']}"})
+
     async def chat(self, task: str, messages: list[dict], max_tokens: int = 800,
-                   temperature: float = 0.1, json_mode: bool = False) -> tuple[str, dict]:
+                   temperature: float = 0.1, json_mode: bool = False,
+                   accept=None) -> tuple[str, dict]:
+        """accept: optional check on the content; a reply it rejects falls through
+        to the next provider instead of being returned."""
         providers = self._providers_for(task)
         if not providers:
             raise GatewayUnavailable(self._why_none(task))
@@ -80,14 +101,20 @@ class Gateway:
         for p in providers:
             if self._cooling(p["id"]):
                 continue
-            body = {"model": p["model"], "messages": messages,
-                    "max_tokens": max_tokens, "temperature": temperature}
-            if json_mode:
-                body["response_format"] = {"type": "json_object"}
+            budget = max(max_tokens, self.REASONING_BUDGET) if self._is_reasoning(p["id"]) else max_tokens
             try:
-                async with httpx.AsyncClient(timeout=90) as client:
-                    r = await client.post(f"{p['base_url']}/chat/completions", json=body,
-                                          headers={"Authorization": f"Bearer {p['key']}"})
+                r = await self._call(p, messages, budget, temperature, json_mode)
+                data = r.json() if r.status_code == 200 else None
+                choice = data["choices"][0] if data else None
+                # empty + truncated = the thinking ate the budget; retry once with room
+                if (choice and choice.get("finish_reason") == "length"
+                        and not (choice["message"].get("content") or "").strip()
+                        and budget < self.REASONING_BUDGET):
+                    self.redis.set(f"ai_reasoning:{p['id']}", "1", ex=7 * 86400)
+                    log.info("%s is a reasoning model; retrying with %s tokens",
+                             p["name"], self.REASONING_BUDGET)
+                    r = await self._call(p, messages, self.REASONING_BUDGET, temperature, json_mode)
+                    data = r.json() if r.status_code == 200 else None
             except httpx.HTTPError as e:
                 last_err = f"{p['name']}: {e}"
                 self._cool(p["id"], 60)
@@ -99,24 +126,20 @@ class Gateway:
             if r.status_code != 200:
                 last_err = f"{p['name']}: {r.status_code} {r.text[:120]}"
                 continue
-            data = r.json()
-            content = data["choices"][0]["message"]["content"] or ""
+            content = data["choices"][0]["message"].get("content") or ""
             usage = data.get("usage", {}) or {}
             self._record(task, p["name"], data.get("model", p["model"]),
                          usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
+            if not content.strip() or (accept and not accept(content)):
+                last_err = f"{p['name']}: unusable reply ({content[:80]!r})"
+                continue
             return content, {"provider": p["name"], "model": p["model"]}
         raise GatewayUnavailable(last_err)
 
     async def chat_json(self, task: str, messages: list[dict], max_tokens: int = 800) -> dict:
-        content, _ = await self.chat(task, messages, max_tokens=max_tokens, json_mode=True)
-        try:
-            return _extract_json(content)
-        except ValueError:
-            retry = messages + [
-                {"role": "assistant", "content": content},
-                {"role": "user", "content": "That was not valid JSON. Reply with ONLY the JSON object."}]
-            content, _ = await self.chat(task, retry, max_tokens=max_tokens, json_mode=True)
-            return _extract_json(content)
+        content, _ = await self.chat(task, messages, max_tokens=max_tokens, json_mode=True,
+                                     accept=_is_json)
+        return _extract_json(content)
 
     async def embed(self, texts: list[str]) -> list[list[float]] | None:
         providers = self._providers_for("embed")
@@ -180,6 +203,14 @@ class Gateway:
                 db.commit()
         except Exception:  # noqa: BLE001
             log.warning("token usage record failed", exc_info=True)
+
+
+def _is_json(text: str) -> bool:
+    try:
+        _extract_json(text)
+        return True
+    except ValueError:  # json.JSONDecodeError is a ValueError too
+        return False
 
 
 def _extract_json(text: str) -> dict:
