@@ -1,5 +1,7 @@
 """First-boot schema creation + seeding, safe to run from API and worker
 concurrently — a Postgres advisory lock serializes the create_all race."""
+import logging
+
 from sqlalchemy import text
 
 from .db import Base, SessionLocal, engine
@@ -119,14 +121,17 @@ def init_schema_and_seed() -> None:
                     continue
                 if (table, col) not in have_cols:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}"))
+            # jsonb conversion BEFORE the indexes: gin has no operator class for
+            # plain json, so on a DB restored from a pre-jsonb dump the reverse
+            # order fails ix_posts_topics_gin and crash-loops api + worker.
+            for stmt in _JSONB_MIGRATIONS:
+                conn.execute(text(stmt))
             have_idx = _existing_indexes(conn)
             for name, ddl in _ADD_INDEXES:
                 if "hnsw" in ddl and not has_vector:
                     continue
                 if name not in have_idx:
                     conn.execute(text(ddl))
-            for stmt in _JSONB_MIGRATIONS:
-                conn.execute(text(stmt))
             conn.execute(text("SET lock_timeout = 0"))  # unrestricted for seeding
             conn.commit()
             with Session(bind=conn) as db:  # seed on the SAME locked connection
@@ -136,6 +141,15 @@ def init_schema_and_seed() -> None:
                 _seed_providers(db)
                 db.commit()
         finally:
+            # A failed migration leaves the transaction aborted, and every further
+            # statement on it raises — including this unlock, which would then mask
+            # the real error (e.g. a lock_timeout) behind a PendingRollbackError.
+            # The advisory lock is session-level, so it survives the rollback.
+            try:
+                conn.rollback()
+            except Exception:  # noqa: BLE001 - nothing useful left to do here
+                logging.getLogger("bootstrap").warning("rollback before unlock failed",
+                                                       exc_info=True)
             conn.execute(text("SELECT pg_advisory_unlock(:id)"), {"id": _LOCK_ID})
             conn.commit()
 
