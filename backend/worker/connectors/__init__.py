@@ -40,7 +40,8 @@ def build(connector_key: str, db=None, source_config: dict | None = None):
         from .gated import (AppStoreReviews, GoogleFactCheck, PlacesReviews,
                             PodcastIndex)
         if connector_key == "appstore":
-            return AppStoreReviews(app_ids=cfg.get("app_ids", []), country=cfg.get("country", "us"))
+            return AppStoreReviews(app_ids=cfg.get("app_ids", []),
+                                   country=(cfg.get("country") or "us"))
         if connector_key == "factcheck":
             return GoogleFactCheck(api_key=cfg.get("api_key", ""))
         if connector_key == "podcastindex":
@@ -49,7 +50,11 @@ def build(connector_key: str, db=None, source_config: dict | None = None):
             return PlacesReviews(api_key=cfg.get("api_key", ""), place_ids=cfg.get("place_ids", []))
     if connector_key == "threads":
         from .fallback import FallbackConnector
-        return FallbackConnector("threads", [Threads(), _stealth("threads_stealth", db)])
+        return FallbackConnector("threads",
+                                 [Threads(access_token=cfg.get("access_token", "")),
+                                  _stealth("threads_stealth", db)])
+    if connector_key == "youtube":
+        return YouTube(api_key=cfg.get("api_key", ""))
     if connector_key in ("facebook_stealth", "instagram_stealth", "tiktok_stealth",
                          "x_stealth", "threads_stealth"):
         return _stealth(connector_key, db)

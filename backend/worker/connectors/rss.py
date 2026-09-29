@@ -32,7 +32,7 @@ class Rss(Connector):
         return bool(self.feeds or self.rsshub_routes)
 
     def disabled_reason(self) -> str:
-        return "Add feed URLs or RSSHub routes in the source config"
+        return "Connect: add feed URLs or RSSHub routes"
 
     async def fetch(self, cq: CompiledQuery) -> list[RawMention]:
         urls = list(self.feeds)

@@ -35,6 +35,9 @@ class Source(Base):
     tier: Mapped[int] = mapped_column(Integer, default=1)
     config: Mapped[dict] = mapped_column(JSON, default=dict)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # secrets (API keys/tokens) encrypted with the SECRET_KEY-derived Fernet key;
+    # non-secret settings stay in `config`. See services/credentials.py.
+    secrets_enc: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(20), default="idle")  # idle|ok|error|dormant
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(Text)

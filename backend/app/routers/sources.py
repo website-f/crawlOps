@@ -5,18 +5,122 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..db import get_db
 from ..models import FetchRun, Proxy, Source, StealthSession
+from ..services import credentials as creds
 from ..services.proxy_manager import proxy_manager
 
 router = APIRouter(prefix="/api/sources", tags=["sources"])
 
 
+STEALTH_CONNECTORS = {"facebook_stealth", "instagram_stealth", "tiktok_stealth",
+                      "x_stealth", "threads_stealth"}
+
+
+def _account_state(platform: str, sessions: list) -> dict:
+    """What the operator actually needs to know about a stealth platform: is an
+    account connected, and is it usable right now? `sources.status` alone can't say
+    this — a connected-but-expired account and no account at all both end up
+    'dormant' with a 'needs login' message, which is what made Facebook look
+    unconnected when it wasn't."""
+    mine = [x for x in sessions if x.platform == platform]
+    with_cookies = [x for x in mine if x.cookie_ref]
+    if not with_cookies:
+        return {"connected": False, "state": "none",
+                "detail": "No account connected — public browsing only, which these "
+                          "platforms wall off. Log in here to crawl as a real account."}
+    live = [x for x in with_cookies if x.status == "ready"]
+    if live:
+        s = live[0]
+        return {"connected": True, "state": "ready", "label": s.label,
+                "detail": f"Connected as “{s.label}” — {s.daily_used}/{s.daily_cap} fetches used today."}
+    reauth = [x for x in with_cookies if x.status == "needs_reauth"]
+    if reauth:
+        s = reauth[0]
+        return {"connected": True, "state": "needs_reauth", "label": s.label,
+                "detail": f"“{s.label}” is connected but its cookies expired — log in "
+                          f"again to resume. Until then this platform is crawled logged-out."}
+    s = with_cookies[0]
+    return {"connected": True, "state": "resting", "label": s.label,
+            "detail": f"“{s.label}” hit its daily cap ({s.daily_used}/{s.daily_cap}); "
+                      f"the nightly job resets it."}
+
+
 @router.get("")
 def list_sources(db: Session = Depends(get_db)):
-    return [{"id": s.id, "platform": s.platform, "connector": s.connector, "tier": s.tier,
-             "enabled": s.enabled, "status": s.status,
-             "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None,
-             "last_error": (s.last_error or "")[:300]}
-            for s in db.query(Source).order_by(Source.tier, Source.platform).all()]
+    sessions = db.query(StealthSession).all()
+    out = []
+    for s in db.query(Source).order_by(Source.tier, Source.platform).all():
+        row = {"id": s.id, "platform": s.platform, "connector": s.connector, "tier": s.tier,
+               "enabled": s.enabled, "status": s.status,
+               "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None,
+               "last_error": (s.last_error or "")[:300],
+               "needs_credentials": creds.needs_credentials(s.connector),
+               "missing": creds.missing_required(s),
+               "configured": creds.needs_credentials(s.connector) and not creds.missing_required(s)}
+        if s.connector in STEALTH_CONNECTORS:
+            row["account"] = _account_state(s.platform, sessions)
+        out.append(row)
+    return out
+
+
+@router.get("/{source_id}/credentials")
+def get_credentials(source_id: int, db: Session = Depends(get_db)):
+    """The spec plus whether each field is set. Secrets are never returned in plain."""
+    s = db.get(Source, source_id)
+    if not s:
+        raise HTTPException(404)
+    return {"connector": s.connector, "platform": s.platform,
+            "fields": creds.status_fields(s), "missing": creds.missing_required(s)}
+
+
+class CredentialsIn(BaseModel):
+    values: dict
+
+
+@router.put("/{source_id}/credentials")
+def set_credentials(source_id: int, body: CredentialsIn, db: Session = Depends(get_db)):
+    """Secrets go to the encrypted blob, everything else to plain config. A blank
+    secret means 'keep what is stored', so the form can submit masked fields."""
+    s = db.get(Source, source_id)
+    if not s:
+        raise HTTPException(404)
+    spec = {f["key"]: f for f in creds.spec_for(s.connector)}
+    if not spec:
+        raise HTTPException(400, f"{s.connector} takes no credentials")
+    cfg = dict(s.config or {})
+    for key, raw in body.values.items():
+        f = spec.get(key)
+        if not f or f["type"] == "secret":
+            continue
+        if f["type"] == "list":
+            items = raw if isinstance(raw, list) else str(raw or "").splitlines()
+            cfg[key] = [x.strip() for x in items if str(x).strip()]
+        else:
+            cfg[key] = str(raw or "").strip()
+    s.config = cfg
+    creds.write_secrets(s, {k: v for k, v in body.values.items()
+                            if spec.get(k, {}).get("type") == "secret"})
+    if not creds.missing_required(s):
+        s.enabled = True          # connecting a source is the act of turning it on
+        if s.status == "dormant":
+            s.status, s.last_error = "idle", None
+    db.commit()
+    return {"id": s.id, "enabled": s.enabled, "fields": creds.status_fields(s),
+            "missing": creds.missing_required(s)}
+
+
+@router.delete("/{source_id}/credentials")
+def clear_credentials(source_id: int, db: Session = Depends(get_db)):
+    s = db.get(Source, source_id)
+    if not s:
+        raise HTTPException(404)
+    creds.clear_secrets(s)
+    cfg = dict(s.config or {})
+    for f in creds.spec_for(s.connector):
+        cfg.pop(f["key"], None)
+    s.config = cfg
+    s.status, s.last_error = "dormant", "Disconnected — add credentials to re-enable"
+    db.commit()
+    return {"id": s.id, "fields": creds.status_fields(s)}
 
 
 @router.post("/{source_id}/toggle")

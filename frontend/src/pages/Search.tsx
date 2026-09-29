@@ -49,7 +49,7 @@ export default function Search() {
           <h1 className="text-lg font-bold">Semantic search</h1>
         </div>
         <p className="text-sm text-muted mt-1">
-          Search by meaning, not keywords — finds posts that are conceptually related even when they use different words. Powered by on-device embeddings.
+          Finds posts that <b>mean</b> what you asked for, even when they share no words with your query.
         </p>
       </div>
 
@@ -74,6 +74,43 @@ export default function Search() {
           </button>
         </div>
       </div>
+
+      {/* Shown until the first search: the feature is useless without knowing what
+          to type into it, and "semantic" tells a new operator nothing. */}
+      {!ran && !err && (
+        <div className="bg-white border border-grid rounded-2xl p-4 space-y-3">
+          <div className="text-sm font-semibold">What this does differently</div>
+          <p className="text-[13px] text-inksec">
+            The keyword Feed matches letters: searching <i>“layoffs”</i> finds posts containing
+            the word “layoffs”. This searches by meaning, so the same query also surfaces
+            <i> “200 staff let go”</i>, <i>“restructuring exercise”</i> and
+            <i> “pekerja diberhentikan”</i> — different words, same idea, including across
+            languages.
+          </p>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div className="rounded-xl border border-grid p-3">
+              <div className="text-[12px] font-semibold mb-1">Ask for it like a sentence</div>
+              <ul className="text-[12px] text-inksec space-y-1">
+                <li>• “customers complaining about delivery delays”</li>
+                <li>• “people defending the price increase”</li>
+                <li>• “concerns about water supply disruption”</li>
+              </ul>
+            </div>
+            <div className="rounded-xl border border-grid p-3">
+              <div className="text-[12px] font-semibold mb-1">What comes back</div>
+              <p className="text-[12px] text-inksec">
+                Up to 40 posts ranked by closeness, each tagged with a <b>% match</b>. Roughly:
+                above 60% is on-topic, 45–60% is related, below that is drifting. There is no
+                “no results” — it always returns the closest posts it has, so judge by the score.
+              </p>
+            </div>
+          </div>
+          <p className="text-[12px] text-muted">
+            Use the <b>similar</b> link on any post card to find near-duplicates and the rest of a
+            story. Only enriched posts are searchable, so a very recent crawl may not be included yet.
+          </p>
+        </div>
+      )}
 
       {similarId && (
         <div className="flex items-center gap-2 text-sm text-inksec">
@@ -116,7 +153,9 @@ function prettyErr(e: unknown): string {
   const msg = String(e)
   if (msg.includes('503')) {
     if (msg.includes('embedding') || msg.includes('AI Engine'))
-      return 'Semantic search needs an embedding model — enable one in AI Engine (the local Ollama provider includes nomic-embed-text).'
+      return 'Semantic search needs an embedding model (768-dimension, e.g. nomic-embed-text). '
+        + 'In AI Engine, set the "embed" task to a real embedding model — a chat model like '
+        + 'gpt-4o-mini or deepseek-flash cannot produce embeddings.'
     if (msg.includes('pgvector'))
       return 'Semantic search needs the pgvector database image. Rebuild the postgres service.'
     return 'Search is temporarily unavailable.'

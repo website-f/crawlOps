@@ -10,11 +10,15 @@ class YouTube(Connector):
     key = "youtube"
     platform = "youtube"
 
+    def __init__(self, api_key: str = ""):
+        # from the source's encrypted credentials; .env stays a fallback
+        self.api_key = api_key or settings.youtube_api_key
+
     def enabled(self) -> bool:
-        return bool(settings.youtube_api_key)
+        return bool(self.api_key)
 
     def disabled_reason(self) -> str:
-        return "Set YOUTUBE_API_KEY (free Google Cloud key, 10k units/day)"
+        return "Connect a YouTube Data API key (free Google Cloud key, 10k units/day)"
 
     async def fetch(self, cq: CompiledQuery) -> list[RawMention]:
         terms = to_api_terms(cq, TERM_CAP["youtube"])
@@ -24,7 +28,7 @@ class YouTube(Connector):
         data = await fetch_json("https://www.googleapis.com/youtube/v3/search",
                                 params={"part": "snippet", "q": term, "order": "date",
                                         "type": "video", "maxResults": 25,
-                                        "key": settings.youtube_api_key})
+                                        "key": self.api_key})
         out = []
         for item in data.get("items", []):
             vid = item.get("id", {}).get("videoId")

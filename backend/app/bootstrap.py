@@ -51,6 +51,7 @@ _ADD_COLUMNS = [
     ("posts", "country", "VARCHAR(2)"),
     ("posts", "country_name", "VARCHAR(80)"),
     ("posts", "region", "VARCHAR(120)"),
+    ("sources", "secrets_enc", "TEXT DEFAULT ''"),
     ("posts", "issue", "VARCHAR(60)"),
     ("posts", "stance", "VARCHAR(10)"),
     ("geo_cache", "country", "VARCHAR(2)"),

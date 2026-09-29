@@ -91,11 +91,23 @@ class StealthConnector(Connector):
                         session.status = "needs_reauth"
                         db.commit()
                         raise LoginRequired(
-                            f"{self.platform} session '{label}' cookies expired. "
-                            f"Re-import fresh cookies in Sources -> stealth session.")
+                            f"“{label}” is connected but its cookies expired — "
+                            f"reconnect it on Sources to resume logged-in crawling.")
+                    # No cookies on THIS session, but the platform may still have an
+                    # account that is merely expired or resting. Say which — otherwise a
+                    # connected-but-unusable account reads as "no account connected",
+                    # which is exactly what made Facebook look unconnected when it wasn't.
+                    other = (db.query(StealthSession)
+                             .filter(StealthSession.platform == self.platform,
+                                     StealthSession.cookie_ref.isnot(None))
+                             .order_by(StealthSession.id).first())
+                    if other is not None:
+                        raise LoginRequired(
+                            f"“{other.label}” is connected but not usable right now "
+                            f"({other.status}) — crawling logged-out until it is.")
                     raise LoginRequired(
-                        f"{self.platform} needs login. Import an account's cookies in "
-                        f"Sources -> stealth session to crawl logged-in.")
+                        f"No {self.platform} account connected — log in on Sources "
+                        f"to crawl as a real account.")
 
                 posts = extract_posts(self.platform, snapshot)
                 if posts:

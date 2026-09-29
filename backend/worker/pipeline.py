@@ -28,6 +28,7 @@ from app.services.boolean_query import compile_query
 from app.services.clustering import assign_cluster, vectorize
 from app.services.dedup import identity_key, near_duplicate, simhash64
 from app.services.gateway import GatewayUnavailable, gateway
+from app.services.credentials import effective_config
 from app.services.geocode import geocode
 from app.services.countries import country_from_domain, country_from_url, country_name
 from app.services.media_cache import cache_media
@@ -141,7 +142,8 @@ async def run_topic(db: DbSession, topic: Topic) -> dict:
                     continue                         # circuit breaker: still cooling
             except Exception:  # noqa: BLE001
                 pass
-        prepared.append((source, build(source.connector, db, source.config)))
+        # effective_config merges plain config with the source's decrypted secrets
+        prepared.append((source, build(source.connector, db, effective_config(source))))
 
     # End the read transaction before the long concurrent fetch. Otherwise the session
     # sits "idle in transaction" for the whole fetch (tens of seconds), holding a

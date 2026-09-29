@@ -27,6 +27,60 @@ interface ExploreResp {
 }
 const EMPTY_SEL = { platforms: [] as string[], sentiments: [] as string[], emotions: [] as string[], countries: [] as string[], topics: [] as string[] }
 
+// --- Sankey rendering -------------------------------------------------------
+// Three columns: where it was published -> what it was about -> how it felt.
+// Colour carries the meaning: the sentiment column and every flow entering it are
+// tinted by sentiment, so a topic bleeding into red is visible without reading a
+// single label. Recharts' default renderer draws unlabelled same-colour boxes.
+const LAYER_FILL = ['#2a78d6', '#7c5cbf', '#898781']   // source, topic, (sentiment overridden)
+
+// recharts hands the link either resolved node objects or bare indices depending
+// on version, so resolve through the node list when it is not an object.
+function sentimentOf(node: any, nodes?: any[]): string | null {
+  const resolved = typeof node === 'number' ? (nodes || [])[node] : node
+  const k: string = resolved?.key || ''
+  return k.startsWith('x:') ? k.slice(2) : null
+}
+
+function nodeFill(node: any): string {
+  const sent = sentimentOf(node)
+  if (sent) return (SENTIMENT as any)[sent]?.color || '#898781'
+  return LAYER_FILL[node?.layer ?? 0]
+}
+
+function SankeyNode(props: any) {
+  const { x, y, width, height, payload } = props
+  const layer = payload?.layer ?? 0
+  const fill = nodeFill(payload)
+  const right = layer === 2
+  const label = payload?.name ?? ''
+  const tx = right ? x - 8 : x + width + 8
+  return (
+    <g>
+      <rect x={x} y={y} width={width} height={Math.max(height, 2)} fill={fill} rx={2} />
+      <text x={tx} y={y + height / 2} textAnchor={right ? 'end' : 'start'} dominantBaseline="middle"
+        fontSize={11} fill="#3d3b35"
+        stroke="#ffffff" strokeWidth={3} paintOrder="stroke"
+        style={{ pointerEvents: 'none' }}>
+        {label.length > 22 ? `${label.slice(0, 21)}…` : label}
+      </text>
+      <title>{`${label} — ${payload?.value ?? 0} posts`}</title>
+    </g>
+  )
+}
+
+function SankeyLink(props: any) {
+  const { sourceX, targetX, sourceY, targetY, sourceControlX, targetControlX,
+          linkWidth, payload, nodes } = props
+  const sent = sentimentOf(payload?.target, nodes)
+  const stroke = sent ? (SENTIMENT as any)[sent]?.color || '#c3c2b7' : '#c3c2b7'
+  return (
+    <path
+      d={`M${sourceX},${sourceY}C${sourceControlX},${sourceY} ${targetControlX},${targetY} ${targetX},${targetY}`}
+      stroke={stroke} strokeWidth={Math.max(1, linkWidth)} strokeOpacity={sent ? 0.28 : 0.2} fill="none" />
+  )
+}
+
 export default function Analytics({ view = 'overview' }: { view?: AnalyticsView }) {
   const [topics, setTopics] = useState<Topic[]>([])
   const [topicId, setTopicId] = useState<number | ''>('')
@@ -96,7 +150,10 @@ export default function Analytics({ view = 'overview' }: { view?: AnalyticsView 
   const s = data?.summary
   const net = s && s.total ? Math.round(((s.sentiment.pos - s.sentiment.neg) / s.total) * 100) : 0
   const emotionData = useMemo(() => (data?.facets.emotions || []).map((e) => ({ emotion: e.value, count: e.count })), [data])
-  const sankeyData = useMemo(() => ({ nodes: (flow.nodes || []).map((n: any) => ({ name: n.label })), links: flow.links || [] }), [flow])
+  const sankeyData = useMemo(() => ({
+    nodes: (flow.nodes || []).map((n: any) => ({ name: n.label, layer: n.layer, key: n.key })),
+    links: flow.links || [],
+  }), [flow])
 
   return (
     <div>
@@ -303,13 +360,35 @@ export default function Analytics({ view = 'overview' }: { view?: AnalyticsView 
                 ) : <div className="text-muted text-sm py-16 text-center">No sentiment data yet.</div>}
               </Panel>
             </div>
-            <Panel title="Source to Topic to Sentiment flow">
+            <Panel title="Where coverage comes from, and how it lands">
+              <p className="text-[12px] text-inksec -mt-1 mb-1">
+                Read it left to right: <b>platform</b> → <b>topic</b> → <b>sentiment</b>. Band
+                thickness is the number of posts, and every band is tinted by the sentiment it
+                ends in.
+              </p>
+              <p className="text-[12px] text-muted mb-3">
+                Look for a thick red band: that is the topic and the platform driving your
+                negative coverage. A topic feeding mostly grey is being reported, not argued about.
+              </p>
               {sankeyData.links.length ? (
-                <ResponsiveContainer width="100%" height={320}>
-                  <Sankey data={sankeyData} nodePadding={18} nodeWidth={12} link={{ stroke: '#c3c2b7', strokeOpacity: 0.35 } as any} node={{ fill: '#2a78d6' } as any}>
-                    <Tooltip contentStyle={{ fontSize: 12, borderRadius: 10, border: '1px solid #e1e0d9' }} />
-                  </Sankey>
-                </ResponsiveContainer>
+                <>
+                  <div className="flex items-center gap-3 flex-wrap text-[11px] text-inksec mb-1">
+                    <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: LAYER_FILL[0] }} />platform</span>
+                    <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: LAYER_FILL[1] }} />topic</span>
+                    {Object.entries(SENTIMENT).map(([k, v]: any) => (
+                      <span key={k} className="inline-flex items-center gap-1">
+                        <i className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: v.color }} />{v.label}
+                      </span>
+                    ))}
+                  </div>
+                  <ResponsiveContainer width="100%" height={Math.max(320, sankeyData.nodes.length * 22)}>
+                    <Sankey data={sankeyData} nodePadding={22} nodeWidth={11}
+                      margin={{ top: 10, bottom: 10, left: 8, right: 108 }}
+                      link={<SankeyLink nodes={sankeyData.nodes} />} node={<SankeyNode />}>
+                      <Tooltip contentStyle={{ fontSize: 12, borderRadius: 10, border: '1px solid #e1e0d9' }} />
+                    </Sankey>
+                  </ResponsiveContainer>
+                </>
               ) : <div className="text-muted text-sm py-16 text-center">Needs enriched posts with topics + sentiment.</div>}
             </Panel>
           </>}

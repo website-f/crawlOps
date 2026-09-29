@@ -15,11 +15,15 @@ class Threads(Connector):
     key = "threads"
     platform = "threads"
 
+    def __init__(self, access_token: str = ""):
+        # from the source's encrypted credentials; .env stays a fallback
+        self.access_token = access_token or settings.threads_access_token
+
     def enabled(self) -> bool:
-        return bool(settings.threads_access_token)
+        return bool(self.access_token)
 
     def disabled_reason(self) -> str:
-        return "Set THREADS_ACCESS_TOKEN (Meta app with threads_keyword_search scope)"
+        return "Connect a Threads access token (Meta app, threads_keyword_search scope)"
 
     async def fetch(self, cq: CompiledQuery) -> list[RawMention]:
         terms = to_api_terms(cq, TERM_CAP["threads"])
@@ -28,7 +32,7 @@ class Threads(Connector):
     async def _search(self, term: str) -> list[RawMention]:
         data = await fetch_json("https://graph.threads.net/v1.0/keyword_search",
                                 params={"q": term, "search_type": "RECENT", "fields": FIELDS,
-                                        "access_token": settings.threads_access_token})
+                                        "access_token": self.access_token})
         out = []
         for p in data.get("data", []):
             media = []

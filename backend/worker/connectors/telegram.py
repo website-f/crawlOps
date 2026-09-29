@@ -35,7 +35,7 @@ class Telegram(Connector):
         return bool(self.channels)
 
     def disabled_reason(self) -> str:
-        return "Add public channel usernames in the source config (config.channels)"
+        return "Connect: add public channel usernames"
 
     async def fetch(self, cq: CompiledQuery) -> list[RawMention]:
         return await collect(self._channel(c.lstrip("@")) for c in self.channels[:15])

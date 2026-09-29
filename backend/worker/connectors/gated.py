@@ -31,7 +31,7 @@ class AppStoreReviews(Connector):
         return bool(self.app_ids)
 
     def disabled_reason(self) -> str:
-        return "Add App Store numeric app_ids in the source config"
+        return "Connect: add App Store app IDs"
 
     async def fetch(self, cq: CompiledQuery) -> list[RawMention]:
         return await collect(self._app(a) for a in self.app_ids[:10])
@@ -72,7 +72,7 @@ class GoogleFactCheck(Connector):
         return bool(self.api_key)
 
     def disabled_reason(self) -> str:
-        return "Add a Google Fact Check Tools API key in the source config"
+        return "Connect: add a Google Fact Check Tools API key"
 
     async def fetch(self, cq: CompiledQuery) -> list[RawMention]:
         return await collect(self._q(t) for t in to_api_terms(cq, 3))
@@ -109,7 +109,7 @@ class PodcastIndex(Connector):
         return bool(self.api_key and self.api_secret)
 
     def disabled_reason(self) -> str:
-        return "Add Podcast Index api_key + api_secret in the source config"
+        return "Connect: add a Podcast Index key + secret"
 
     async def fetch(self, cq: CompiledQuery) -> list[RawMention]:
         import hashlib
@@ -154,7 +154,7 @@ class PlacesReviews(Connector):
         return bool(self.api_key and self.place_ids)
 
     def disabled_reason(self) -> str:
-        return "Add a Google Places API key + place_ids in the source config (paid API)"
+        return "Connect: add a Google Places API key + place IDs (paid API)"
 
     async def fetch(self, cq: CompiledQuery) -> list[RawMention]:
         return await collect(self._place(p) for p in self.place_ids[:10])
