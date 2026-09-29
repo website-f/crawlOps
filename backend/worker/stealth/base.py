@@ -43,10 +43,10 @@ class StealthConnector(Connector):
     def search_url(self, term: str) -> str:
         raise NotImplementedError
 
-    def _pick_session(self):
+    def _pick_session(self, db: DbSession):
         """Least-recently-used ready session under its daily cap. Prefer sessions
         that HAVE cookies (can see walled content) over bare public ones."""
-        q = (self.db.query(StealthSession)
+        q = (db.query(StealthSession)
              .filter(StealthSession.platform == self.platform,
                      StealthSession.status == "ready",
                      StealthSession.daily_used < StealthSession.daily_cap)
@@ -57,45 +57,50 @@ class StealthConnector(Connector):
     async def fetch(self, cq) -> list[RawMention]:
         from app.services.boolean_query import to_api_terms
         if self.db is None:
-            return []
-        session = self._pick_session()
-        if session is None:
-            log.info("%s: no ready session under daily cap", self.platform)
-            return []
-        if not await self.client.health():
-            raise RuntimeError("camofox not running (start the camofox service)")
+            return []                              # not a real fetch context (UI listing)
+        # Own a private DB session: fetch() runs concurrently with other connectors in
+        # the pipeline's Phase 1, so it must NOT touch the shared pipeline session.
+        from app.db import SessionLocal
+        with SessionLocal() as db:
+            session = self._pick_session(db)
+            if session is None:
+                log.info("%s: no ready session under daily cap", self.platform)
+                return []
+            if not await self.client.health():
+                raise RuntimeError("camofox not running (start the camofox service)")
 
-        terms = to_api_terms(cq, self.search_terms_cap)
-        if not terms:
-            return []
-        has_cookies = bool(session.cookie_ref)
-        user_id = session.cookie_ref or f"{self.platform}-{session.id}"
-        tab = await self.client.open_tab(self.search_url(terms[0]), user_id)
-        try:
-            await human_dwell()
-            snapshot, _ = await self.client.snapshot_text(tab, user_id)
-            session.daily_used += 1
-            session.last_used_at = datetime.now(timezone.utc)
-            if session.daily_used >= session.daily_cap:
-                session.status = "resting"  # rotate away; nightly resets it
-            self.db.commit()
+            terms = to_api_terms(cq, self.search_terms_cap)
+            if not terms:
+                return []
+            has_cookies = bool(session.cookie_ref)
+            label = session.label
+            user_id = session.cookie_ref or f"{self.platform}-{session.id}"
+            tab = await self.client.open_tab(self.search_url(terms[0]), user_id)
+            try:
+                await human_dwell()
+                snapshot, _ = await self.client.snapshot_text(tab, user_id)
+                session.daily_used += 1
+                session.last_used_at = datetime.now(timezone.utc)
+                if session.daily_used >= session.daily_cap:
+                    session.status = "resting"  # rotate away; nightly resets it
+                db.commit()
 
-            if looks_like_login_wall(snapshot):
-                if has_cookies:
-                    # cookies present but still walled -> they expired
-                    session.status = "needs_reauth"
-                    self.db.commit()
+                if looks_like_login_wall(snapshot):
+                    if has_cookies:
+                        # cookies present but still walled -> they expired
+                        session.status = "needs_reauth"
+                        db.commit()
+                        raise LoginRequired(
+                            f"{self.platform} session '{label}' cookies expired. "
+                            f"Re-import fresh cookies in Sources -> stealth session.")
                     raise LoginRequired(
-                        f"{self.platform} session '{session.label}' cookies expired. "
-                        f"Re-import fresh cookies in Sources -> stealth session.")
-                raise LoginRequired(
-                    f"{self.platform} needs login. Import an account's cookies in "
-                    f"Sources -> stealth session to crawl logged-in.")
+                        f"{self.platform} needs login. Import an account's cookies in "
+                        f"Sources -> stealth session to crawl logged-in.")
 
-            posts = extract_posts(self.platform, snapshot)
-            if posts:
-                return posts
-            # no structured posts from the heuristic -> let the AI agent read the text
-            raise SelectorBroken(f"{self.platform}: heuristic found nothing", snapshot)
-        finally:
-            await self.client.close_tab(tab, user_id)
+                posts = extract_posts(self.platform, snapshot)
+                if posts:
+                    return posts
+                # no structured posts from the heuristic -> let the AI agent read the text
+                raise SelectorBroken(f"{self.platform}: heuristic found nothing", snapshot)
+            finally:
+                await self.client.close_tab(tab, user_id)

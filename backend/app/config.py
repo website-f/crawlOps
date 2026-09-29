@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     judge_threshold_default: int = 55
     cluster_sim_news: float = 0.82
     cluster_sim_social: float = 0.78
-    enrich_catchup_minutes: int = 15
+    enrich_catchup_minutes: int = 2   # local Ollama is free; keep the backlog drained
 
     class Config:
         env_file = ".env"

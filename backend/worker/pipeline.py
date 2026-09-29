@@ -18,6 +18,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session as DbSession
 
 from app.config import settings
@@ -46,11 +47,20 @@ EMOTIONS = {"joy", "trust", "anticipation", "surprise", "fear", "anger",
 # Concurrency caps. Fetch fans out across ~24 sources; enrich fans out across posts.
 # Both are bounded so we stay polite to remote APIs and don't stampede providers.
 FETCH_CONCURRENCY = 6
-ENRICH_CONCURRENCY = 6
+# Enrich concurrency keeps a local GPU model fed (overlaps embed with judge); Ollama
+# queues past its own parallelism, so this is a "keep it busy" number, not a GPU cap.
+ENRICH_CONCURRENCY = 8
 # Per-cycle inline enrichment cap: a cold-start topic can insert thousands of posts;
 # we enrich this many inline (fast, concurrent) and let catch-up drain the overflow so
 # one huge topic can't monopolise the tick loop.
 ENRICH_INLINE_CAP = 400
+# Catch-up drains the backlog in chunks, committing after each, so a worker restart
+# mid-backlog keeps the progress it made instead of rolling the whole batch back.
+CATCHUP_BATCH = 300
+CATCHUP_CHUNK = 40
+# Near-dup recall window: how many recent posts (per topic) a new post is compared
+# against. Wider = better dedup on busy topics; hamming compare is cheap.
+DEDUP_WINDOW = 6000
 # Full-article extraction is worth it for the news tier (headline+teaser -> full body).
 ARTICLE_PLATFORMS = {"news"}
 ARTICLE_MAX_CHARS = 8000
@@ -63,11 +73,40 @@ CONNECTOR_FAIL_THRESHOLD = 2
 CONNECTOR_COOLDOWN_S = 300
 
 
+EMBED_DIM = 768                         # nomic-embed-text; the pgvector column dimension
+_embed_col_ok: bool | None = None       # cached: does posts.embedding exist? (pgvector image)
+
+
 def _clamp_int(v, lo: int = 0, hi: int = 100) -> int | None:
     try:
         return max(lo, min(hi, int(v)))
     except (TypeError, ValueError):
         return None
+
+
+def _vec_literal(vec) -> str:
+    return "[" + ",".join(f"{float(x):.6f}" for x in vec) + "]"
+
+
+def _embedding_enabled(db: DbSession) -> bool:
+    """True only when the pgvector `embedding` column exists — checked once, cached, so
+    a non-pgvector image just skips storage instead of poisoning the transaction."""
+    global _embed_col_ok
+    if _embed_col_ok is None:
+        try:
+            _embed_col_ok = bool(db.execute(text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name='posts' AND column_name='embedding'")).first())
+        except Exception:  # noqa: BLE001
+            _embed_col_ok = False
+    return _embed_col_ok
+
+
+def _store_embedding(db: DbSession, post_id: int, vec) -> None:
+    if not vec or len(vec) != EMBED_DIM or not _embedding_enabled(db):
+        return
+    db.execute(text("UPDATE posts SET embedding = CAST(:e AS vector) WHERE id = :i"),
+               {"e": _vec_literal(vec), "i": post_id})
 
 
 def _redis():
@@ -103,6 +142,13 @@ async def run_topic(db: DbSession, topic: Topic) -> dict:
             except Exception:  # noqa: BLE001
                 pass
         prepared.append((source, build(source.connector, db, source.config)))
+
+    # End the read transaction before the long concurrent fetch. Otherwise the session
+    # sits "idle in transaction" for the whole fetch (tens of seconds), holding a
+    # snapshot that blocks VACUUM and — worse — queues behind any startup DDL, which on
+    # a deploy/restart stalls every posts read for minutes. Connectors do no shared-DB
+    # work in Phase 1 (stealth uses its own session), so this is safe.
+    db.commit()
 
     # ---- Phase 1: concurrent network fetch (NO DB access inside tasks) ----
     sem = asyncio.Semaphore(FETCH_CONCURRENCY)
@@ -204,10 +250,12 @@ async def _heal_and_retry(db: DbSession, source: Source, err: SelectorBroken) ->
 # --------------------------------------------------------------------------- #
 async def _ingest(db: DbSession, topic: Topic, cq, mentions: list[RawMention],
                   hidden_authors: set) -> tuple[int, list[tuple[Post, RawMention]]]:
-    # near-dup candidates: recent simhashes for this topic
+    # near-dup candidates: recent simhashes for this topic. A wider window catches
+    # near-duplicates that resurface after a lull (busy topics were losing recall at
+    # 2000), which keeps SoV/volume counts honest. Hamming compare is cheap.
     recent = (db.query(Post.simhash, Post.dup_group)
               .filter(Post.topic_id == topic.id, Post.simhash.isnot(None))
-              .order_by(Post.id.desc()).limit(2000).all())
+              .order_by(Post.id.desc()).limit(DEDUP_WINDOW).all())
 
     inserted = 0
     docs = []
@@ -291,7 +339,7 @@ async def _extract_article(url: str) -> str | None:
     except Exception:  # noqa: BLE001 — dependency optional; degrade to teaser
         return None
     try:
-        html = await fetch_text(url, timeout=20, attempts=2, purpose="article")
+        html = await fetch_text(url, timeout=12, attempts=1, purpose="article")
     except Exception:  # noqa: BLE001
         return None
     try:
@@ -389,6 +437,9 @@ async def _finalize(db: DbSession, topic: Topic, post: Post, res: dict,
                                              res["vec"], post.title or post.text[:120])
         except Exception:  # noqa: BLE001
             log.warning("clustering skipped", exc_info=True)
+    # persist the embedding we already computed -> semantic search + "more like this"
+    if res.get("vec"):
+        _store_embedding(db, post.id, res["vec"])
 
 
 async def enrich_batch(db: DbSession, topic: Topic,
@@ -427,7 +478,7 @@ async def catchup_enrichment(db: DbSession) -> int:
         return 0                                      # nothing to gain; don't burn network
     pending = (db.query(Post)
                .filter(Post.enrichment_status.in_(["pending", "failed_llm"]))
-               .order_by(Post.id.desc()).limit(200).all())
+               .order_by(Post.id.desc()).limit(CATCHUP_BATCH).all())
     if not pending:
         return 0
     cpm_table = get_setting(db, "cpm")
@@ -453,22 +504,51 @@ async def catchup_enrichment(db: DbSession) -> int:
         return 0
 
     sem = asyncio.Semaphore(ENRICH_CONCURRENCY)
-    results = await asyncio.gather(
-        *[_enrich_fetch(t, p, m, issues, sem) for t, p, m in triples],
-        return_exceptions=True)
-
     done = 0
-    for (topic, post, _m), res in zip(triples, results):
-        before = post.enrichment_status
-        if isinstance(res, Exception):
-            post.enrichment_status = "failed_llm"
-            continue
-        await _finalize(db, topic, post, res, cpm_table)
-        if post.enrichment_status == "done" and before != "done":
-            done += 1
-            try:
-                meili.index_posts([meili.doc_from_post(post)])
-            except Exception:  # noqa: BLE001
-                pass
-    db.commit()
+    # Process in chunks, committing after each: a single end-of-run commit loses the
+    # entire backlog pass if the worker restarts mid-drain. Skip article extraction on
+    # the backlog path — clearing it fast matters more than re-fetching full bodies;
+    # fresh posts already get full articles inline on the live path.
+    for i in range(0, len(triples), CATCHUP_CHUNK):
+        chunk = triples[i:i + CATCHUP_CHUNK]
+        results = await asyncio.gather(
+            *[_enrich_fetch(t, p, m, issues, sem, extract=False) for t, p, m in chunk],
+            return_exceptions=True)
+        docs = []
+        for (topic, post, _m), res in zip(chunk, results):
+            before = post.enrichment_status
+            if isinstance(res, Exception):
+                post.enrichment_status = "failed_llm"
+                continue
+            await _finalize(db, topic, post, res, cpm_table)
+            if post.enrichment_status == "done" and before != "done":
+                done += 1
+                docs.append(meili.doc_from_post(post))
+        db.commit()
+        _index_safe(docs)
     return done
+
+
+async def backfill_embeddings(db: DbSession, limit: int = 200) -> int:
+    """Populate embeddings for posts enriched before we started persisting them, so the
+    whole corpus (not just newly-crawled posts) is semantically searchable."""
+    if not gateway.available("embed") or not _embedding_enabled(db):
+        return 0
+    rows = db.execute(text(
+        "SELECT id, title, text FROM posts "
+        "WHERE embedding IS NULL AND enrichment_status = 'done' "
+        "ORDER BY id DESC LIMIT :l"), {"l": limit}).all()
+    if not rows:
+        return 0
+    n = 0
+    for i in range(0, len(rows), 32):                 # batch the embed calls
+        chunk = rows[i:i + 32]
+        texts = [f"{(r.title or '')} {(r.text or '')}"[:1000] for r in chunk]
+        vecs = await gateway.embed(texts)
+        if not vecs:
+            break                                     # provider dry — resume next pass
+        for r, v in zip(chunk, vecs):
+            _store_embedding(db, r.id, v)
+            n += 1
+        db.commit()
+    return n

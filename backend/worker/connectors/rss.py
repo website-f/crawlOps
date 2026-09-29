@@ -14,7 +14,7 @@ from dateutil import parser as dtparse
 from app.config import settings
 from app.services.boolean_query import CompiledQuery
 
-from .base import Connector, RawMention, collect, fetch_text
+from .base import Connector, RawMention, collect, fetch_text_conditional
 
 _TAGS = re.compile(r"<[^>]+>")
 _IMG = re.compile(r'<img[^>]+src="([^"]+)"', re.I)
@@ -41,7 +41,10 @@ class Rss(Connector):
         return await collect(self._feed(u) for u in urls[:25])
 
     async def _feed(self, url: str) -> list[RawMention]:
-        parsed = feedparser.parse(await fetch_text(url))
+        text = await fetch_text_conditional(url, cache_key=f"rss:{url}")
+        if text is None:
+            return []                                 # 304 Not Modified — nothing new
+        parsed = feedparser.parse(text)
         feed_title = getattr(parsed.feed, "title", "") if hasattr(parsed, "feed") else ""
         out = []
         for e in parsed.entries[:50]:

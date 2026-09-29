@@ -169,6 +169,43 @@ async def fetch_text(url: str, params: dict | None = None, headers: dict | None 
     return r.text
 
 
+async def fetch_text_conditional(url: str, params: dict | None = None,
+                                 headers: dict | None = None, cache_key: str | None = None,
+                                 timeout: float = 25, purpose: str = "tier2") -> str | None:
+    """Conditional GET for pollable resources (RSS/Atom). Sends If-None-Match /
+    If-Modified-Since from the last fetch; returns None when the server answers 304
+    (unchanged) so the caller can skip re-parsing. Saves bandwidth + block-risk on
+    feeds polled every cycle. Validators are stored in Redis, keyed by cache_key|url."""
+    ck = cache_key or url
+    r = None
+    cond: dict[str, str] = {}
+    try:
+        from app.services.proxy_manager import proxy_manager
+        r = proxy_manager.r
+        et = r.get(f"httpcache:etag:{ck}")
+        lm = r.get(f"httpcache:lm:{ck}")
+        if et:
+            cond["If-None-Match"] = et
+        if lm:
+            cond["If-Modified-Since"] = lm
+    except Exception:  # noqa: BLE001
+        r = None
+    resp = await request(url, params=params, headers={**(headers or {}), **cond},
+                         timeout=timeout, purpose=purpose)
+    if resp.status_code == 304:
+        return None                                   # unchanged since last poll
+    resp.raise_for_status()
+    if r is not None and resp.status_code == 200:
+        try:                                          # remember validators for next time
+            if resp.headers.get("ETag"):
+                r.set(f"httpcache:etag:{ck}", resp.headers["ETag"], ex=14 * 86400)
+            if resp.headers.get("Last-Modified"):
+                r.set(f"httpcache:lm:{ck}", resp.headers["Last-Modified"], ex=14 * 86400)
+        except Exception:  # noqa: BLE001
+            pass
+    return resp.text
+
+
 async def collect(coros) -> list[RawMention]:
     """Promise.allSettled + flatten: one term failing never kills the cycle."""
     results = await asyncio.gather(*coros, return_exceptions=True)

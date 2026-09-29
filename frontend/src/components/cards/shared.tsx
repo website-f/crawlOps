@@ -1,4 +1,5 @@
-import { IconEye, IconExternalLink, IconPlayerPlayFilled, IconVolumeOff } from '@tabler/icons-react'
+import { IconEye, IconExternalLink, IconPlayerPlayFilled, IconSparkles, IconVolumeOff } from '@tabler/icons-react'
+import { Link } from 'react-router-dom'
 import { PostHit, fmtNum, mediaUrl, post, thumbUrl, timeAgo } from '../../lib/api'
 import { SENTIMENT } from '../../lib/platform'
 
@@ -86,6 +87,10 @@ export function OpsFooter({ p, onMuted }: { p: PostHit; onMuted?: () => void }) 
         className="inline-flex items-center gap-1 hover:text-red-700 active:scale-[0.96]">
         <IconVolumeOff size={13} stroke={2} />mute
       </button>
+      <Link to={`/search?similar=${p.id}`} title="find semantically similar posts"
+        className="inline-flex items-center gap-1 hover:text-ink active:scale-[0.96]">
+        <IconSparkles size={13} stroke={2} />similar
+      </Link>
       {p.url && (
         <a href={p.url} target="_blank" rel="noreferrer"
           className="inline-flex items-center gap-1 font-medium hover:text-ink">

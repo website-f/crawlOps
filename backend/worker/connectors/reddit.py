@@ -1,12 +1,25 @@
-from datetime import datetime, timezone
+import html
+import re
+from urllib.parse import urlparse
+
+import feedparser
+from dateutil import parser as dtparse
 
 from app.services.boolean_query import CompiledQuery, to_api_terms
 
-from .base import TERM_CAP, Connector, RawMention, fetch_json
+from .base import TERM_CAP, Connector, RawMention, fetch_text
+
+# Reddit hard-403s its search.json to non-OAuth datacenter IPs, but search.rss stays
+# reachable (429/soft under load, which the proxy layer retries). A descriptive,
+# API-guideline UA avoids the generic-browser block. Less rich than JSON (no score/
+# comments), but working reddit data beats a permanently blocked connector.
+REDDIT_UA = "CrawlOps/1.0 (social-listening research bot; by /u/crawlops)"
+_TAGS = re.compile(r"<[^>]+>")
+_SUB = re.compile(r"/r/([^/]+)/")
 
 
 class Reddit(Connector):
-    """Public search JSON, no OAuth — low volume only; browser UA avoids most 403s."""
+    """Public search RSS, no OAuth — low volume; add a proxy for reliable throughput."""
     key = "reddit"
     platform = "reddit"
 
@@ -15,33 +28,27 @@ class Reddit(Connector):
         if not terms:
             return []
         q = " OR ".join(f'"{t}"' for t in terms)
-        data = await fetch_json("https://www.reddit.com/search.json",
-                                params={"q": q, "sort": "new", "t": "week",
-                                        "limit": 100, "raw_json": 1},
-                                retries=(0, 5))
+        text = await fetch_text("https://www.reddit.com/search.rss",
+                                params={"q": q, "sort": "new", "limit": 100},
+                                headers={"User-Agent": REDDIT_UA}, purpose="tier1")
+        feed = feedparser.parse(text)
         out = []
-        for child in (data.get("data", {}) or {}).get("children", []):
-            d = child.get("data", {})
-            if not d.get("id"):
-                continue
-            media = []
-            preview = (d.get("preview") or {}).get("images") or []
-            if preview:
-                src = (preview[0].get("source") or {}).get("url", "")
-                if src:
-                    media.append({"kind": "image", "src_url": src.replace("&amp;", "&")})
-            if d.get("is_video") and (d.get("media") or {}).get("reddit_video"):
-                media.append({"kind": "video",
-                              "src_url": d["media"]["reddit_video"].get("fallback_url", "")})
+        for e in feed.entries[:100]:
+            link = e.get("link", "")
+            thing = (e.get("id", "") or "").split("/")[-1] or link  # t3_xxxx
+            content = ""
+            if e.get("content"):
+                content = e["content"][0].get("value", "")
+            content = content or e.get("summary", "")
+            sub = _SUB.search(link)
+            author = (e.get("author", "") or "").lstrip("/").removeprefix("u/")
             out.append(RawMention(
-                platform="reddit", native_id=d["id"],
-                url=f"https://www.reddit.com{d.get('permalink', '')}",
-                title=(d.get("title") or "")[:300],
-                text=(d.get("selftext") or d.get("title") or "")[:1500],
-                author_key=d.get("author", ""), author_name=d.get("author", ""),
-                author_handle=f"u/{d.get('author', '')}",
-                posted_at=datetime.fromtimestamp(d.get("created_utc", 0), tz=timezone.utc),
-                community=f"r/{d.get('subreddit', '')}",
-                media=media,
-                engagement={"likes": d.get("score") or 0, "comments": d.get("num_comments") or 0}))
+                platform="reddit", native_id=thing,
+                url=link, title=html.unescape(e.get("title", ""))[:300],
+                text=_TAGS.sub(" ", html.unescape(content))[:1500],
+                author_key=author, author_name=author, author_handle=f"u/{author}",
+                domain="reddit.com",
+                community=f"r/{sub.group(1)}" if sub else "reddit",
+                posted_at=dtparse.parse(e["published"]) if e.get("published") else (
+                    dtparse.parse(e["updated"]) if e.get("updated") else None)))
         return out

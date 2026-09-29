@@ -18,7 +18,7 @@ from app.services import meili
 
 from .alerts_engine import evaluate_topic_alerts
 from .nightly import run_nightly
-from .pipeline import catchup_enrichment, run_topic
+from .pipeline import backfill_embeddings, catchup_enrichment, run_topic
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("worker")
@@ -75,6 +75,12 @@ async def main() -> None:
                     n = await catchup_enrichment(db)
                     if n:
                         log.info("catch-up enriched %s posts", n)
+                    # once the judge backlog is drained, backfill embeddings for older
+                    # posts so the whole corpus becomes semantically searchable
+                    if n == 0:
+                        b = await backfill_embeddings(db)
+                        if b:
+                            log.info("backfilled %s embeddings", b)
                 last_catchup = time.monotonic()
             await maybe_nightly(r)
         except Exception:  # noqa: BLE001

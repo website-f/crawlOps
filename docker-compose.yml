@@ -2,7 +2,7 @@ name: crawlops
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16   # postgres 16 + pgvector for semantic search
     restart: unless-stopped
     shm_size: "256mb"
     # sized for a shared host: generous cache, bounded per-query memory

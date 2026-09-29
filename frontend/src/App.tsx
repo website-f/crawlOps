@@ -2,7 +2,8 @@ import {
   IconAntenna, IconBell, IconBolt, IconChartArcs, IconCpu, IconFileText,
   IconHeartRateMonitor, IconHelp, IconLayoutDashboard, IconLogout, IconMap2,
   IconMenu2, IconMoodSmile, IconPlanet, IconPlug, IconScale, IconSettings,
-  IconTable, IconTargetArrow, IconUserOff, IconUsersGroup, IconUsers, IconX,
+  IconSparkles, IconTable, IconTargetArrow, IconUserOff, IconUsersGroup,
+  IconUsers, IconX,
 } from '@tabler/icons-react'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
@@ -19,6 +20,7 @@ const DataExplorer = lazy(() => import('./pages/DataExplorer'))
 const Feed = lazy(() => import('./pages/Feed'))
 const Galaxy = lazy(() => import('./pages/Galaxy'))
 const MapView = lazy(() => import('./pages/MapView'))
+const Search = lazy(() => import('./pages/Search'))
 const SettingsPage = lazy(() => import('./pages/Settings'))
 const Sources = lazy(() => import('./pages/Sources'))
 const SystemHealth = lazy(() => import('./pages/SystemHealth'))
@@ -31,6 +33,7 @@ const GROUPS: { label: string; items: { to: string; label: string; Icon: any }[]
     label: 'Listen',
     items: [
       { to: '/', label: 'Feed', Icon: IconAntenna },
+      { to: '/search', label: 'Semantic Search', Icon: IconSparkles },
       { to: '/topics', label: 'Topics', Icon: IconTargetArrow },
       { to: '/map', label: 'Geography', Icon: IconMap2 },
     ],
@@ -144,6 +147,7 @@ function Shell() {
         <Suspense fallback={<div className="py-20 grid place-items-center text-muted">Loading…</div>}>
         <Routes>
           <Route path="/" element={<Feed />} />
+          <Route path="/search" element={<Search />} />
           <Route path="/topics" element={<Topics />} />
           <Route path="/analytics" element={<Analytics view="overview" />} />
           <Route path="/analytics/health" element={<Analytics view="health" />} />

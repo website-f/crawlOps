@@ -35,34 +35,60 @@ DEFAULT_SOURCES = [
 ]
 
 
-# Lightweight additive migrations — create_all never ALTERs existing tables, so
-# new columns are added here with IF NOT EXISTS (idempotent, data-preserving).
-_MIGRATIONS = [
-    "ALTER TABLE posts ADD COLUMN IF NOT EXISTS emotion VARCHAR(16)",
-    "ALTER TABLE posts ADD COLUMN IF NOT EXISTS entities JSON DEFAULT '[]'::json",
-    "ALTER TABLE posts ADD COLUMN IF NOT EXISTS virality INTEGER",
-    "ALTER TABLE posts ADD COLUMN IF NOT EXISTS risk INTEGER",
-    "ALTER TABLE posts ADD COLUMN IF NOT EXISTS country VARCHAR(2)",
-    "ALTER TABLE posts ADD COLUMN IF NOT EXISTS country_name VARCHAR(80)",
-    "ALTER TABLE posts ADD COLUMN IF NOT EXISTS region VARCHAR(120)",
-    "ALTER TABLE posts ADD COLUMN IF NOT EXISTS issue VARCHAR(60)",
-    "ALTER TABLE posts ADD COLUMN IF NOT EXISTS stance VARCHAR(10)",
-    "CREATE INDEX IF NOT EXISTS ix_posts_emotion ON posts (emotion)",
-    "CREATE INDEX IF NOT EXISTS ix_posts_country ON posts (country)",
-    "CREATE INDEX IF NOT EXISTS ix_posts_issue ON posts (issue)",
-    "ALTER TABLE geo_cache ADD COLUMN IF NOT EXISTS country VARCHAR(2)",
-    "ALTER TABLE geo_cache ADD COLUMN IF NOT EXISTS country_name VARCHAR(80)",
-    "ALTER TABLE geo_cache ADD COLUMN IF NOT EXISTS region VARCHAR(120)",
-    # json -> jsonb so jsonb_* functions, containment, and equality work.
-    # Guarded so the table is only rewritten once (not on every boot).
-    *[f"""DO $$ BEGIN
+# Lightweight additive migrations — create_all never ALTERs existing tables, so new
+# columns/indexes are declared here as data. They are applied ONLY when genuinely
+# missing (checked against the catalog first): a no-op ALTER still grabs ACCESS
+# EXCLUSIVE on the table to check, and on a busy DB that queues behind — and then
+# blocks — every reader for the duration of the lock wait. Running DDL only when
+# there's real work keeps restarts lock-free on a populated database.
+_ADD_COLUMNS = [
+    ("posts", "emotion", "VARCHAR(16)"),
+    ("posts", "entities", "JSON DEFAULT '[]'::json"),
+    ("posts", "virality", "INTEGER"),
+    ("posts", "risk", "INTEGER"),
+    ("posts", "country", "VARCHAR(2)"),
+    ("posts", "country_name", "VARCHAR(80)"),
+    ("posts", "region", "VARCHAR(120)"),
+    ("posts", "issue", "VARCHAR(60)"),
+    ("posts", "stance", "VARCHAR(10)"),
+    ("geo_cache", "country", "VARCHAR(2)"),
+    ("geo_cache", "country_name", "VARCHAR(80)"),
+    ("geo_cache", "region", "VARCHAR(120)"),
+    # semantic search: per-post embedding (nomic-embed-text = 768d). Stored via raw SQL
+    # (not ORM-mapped) so the hot feed path never pays to load 768 floats per post.
+    ("posts", "embedding", "vector(768)"),
+]
+_ADD_INDEXES = [
+    ("ix_posts_emotion", "CREATE INDEX ix_posts_emotion ON posts (emotion)"),
+    ("ix_posts_country", "CREATE INDEX ix_posts_country ON posts (country)"),
+    ("ix_posts_issue", "CREATE INDEX ix_posts_issue ON posts (issue)"),
+    ("ix_posts_topics_gin", "CREATE INDEX ix_posts_topics_gin ON posts USING gin (topics)"),
+    ("ix_posts_embedding", "CREATE INDEX ix_posts_embedding ON posts "
+     "USING hnsw (embedding vector_cosine_ops)"),
+]
+# json -> jsonb so jsonb_* functions, containment, and equality work. The DO block
+# only rewrites a column still typed 'json', so it is a catalog-check no-op once done.
+_JSONB_MIGRATIONS = [
+    f"""DO $$ BEGIN
         IF (SELECT data_type FROM information_schema.columns
             WHERE table_name='posts' AND column_name='{col}') = 'json' THEN
           EXECUTE 'ALTER TABLE posts ALTER COLUMN {col} TYPE jsonb USING {col}::jsonb';
         END IF; END $$;"""
-      for col in ("topics", "entities", "locations", "media", "engagement")],
-    "CREATE INDEX IF NOT EXISTS ix_posts_topics_gin ON posts USING gin (topics)",
+    for col in ("topics", "entities", "locations", "media", "engagement")
 ]
+
+
+def _existing_columns(conn) -> set:
+    rows = conn.execute(text(
+        "SELECT table_name, column_name FROM information_schema.columns "
+        "WHERE table_schema='public'")).all()
+    return {(t, c) for t, c in rows}
+
+
+def _existing_indexes(conn) -> set:
+    rows = conn.execute(text(
+        "SELECT indexname FROM pg_indexes WHERE schemaname='public'")).all()
+    return {r[0] for r in rows}
 
 
 def init_schema_and_seed() -> None:
@@ -72,9 +98,36 @@ def init_schema_and_seed() -> None:
     with engine.connect() as conn:
         conn.execute(text("SELECT pg_advisory_lock(:id)"), {"id": _LOCK_ID})
         try:
+            # pgvector must exist before create_all/migrations reference the vector type.
+            # If the extension isn't installed (non-pgvector image), degrade gracefully:
+            # the embedding column/index are skipped and semantic search returns 503.
+            has_vector = False
+            try:
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                conn.commit()
+                has_vector = True
+            except Exception:  # noqa: BLE001
+                conn.rollback()
             Base.metadata.create_all(conn)
-            for stmt in _MIGRATIONS:
+            # Safety net: never let a migration queue-block readers for long. If the
+            # lock can't be had quickly the DDL errors out and we retry on a later boot
+            # (columns are only missing on a fresh DB, where nothing contends anyway).
+            conn.execute(text("SET lock_timeout = '4s'"))
+            have_cols = _existing_columns(conn)
+            for table, col, ddl in _ADD_COLUMNS:
+                if "vector" in ddl and not has_vector:
+                    continue
+                if (table, col) not in have_cols:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}"))
+            have_idx = _existing_indexes(conn)
+            for name, ddl in _ADD_INDEXES:
+                if "hnsw" in ddl and not has_vector:
+                    continue
+                if name not in have_idx:
+                    conn.execute(text(ddl))
+            for stmt in _JSONB_MIGRATIONS:
                 conn.execute(text(stmt))
+            conn.execute(text("SET lock_timeout = 0"))  # unrestricted for seeding
             conn.commit()
             with Session(bind=conn) as db:  # seed on the SAME locked connection
                 _seed_sources(db)

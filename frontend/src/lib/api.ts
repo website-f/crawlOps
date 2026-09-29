@@ -74,6 +74,7 @@ export interface PostHit {
   posted_ts: number
   cluster_id: number | null
   suppression_watch?: boolean
+  score?: number   // cosine similarity, set by semantic search / "more like this"
 }
 
 export const mediaUrl = (m: PostHit['media'][number]) =>
