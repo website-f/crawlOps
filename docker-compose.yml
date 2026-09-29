@@ -21,7 +21,12 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crawlops_dev}
       POSTGRES_DB: crawlops
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # pgdata16 (not pgdata): the pgvector image is Debian/glibc while the old
+      # alpine one was musl, and the two sort text differently — reusing the musl
+      # cluster would leave every text index built under the wrong collation.
+      # Migration is dump -> fresh volume -> restore; the old `pgdata` volume is
+      # deliberately left behind untouched as an instant rollback.
+      - pgdata16:/var/lib/postgresql/data
       - ./deploy/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U crawlops"]
@@ -203,7 +208,8 @@ services:
       - "${BIND_ADDR:-127.0.0.1}:${QDRANT_PORT:-6333}:6333"
 
 volumes:
-  pgdata:
+  pgdata16:
+  pgdata:      # legacy musl cluster, kept as the rollback for the pgvector migration
   redisdata:
   meilidata:
   miniodata:
