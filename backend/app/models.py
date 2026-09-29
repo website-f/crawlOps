@@ -70,6 +70,8 @@ class Post(Base):
     entities: Mapped[list] = mapped_column(JSONB, default=list)
     virality: Mapped[int | None] = mapped_column(Integer)
     risk: Mapped[int | None] = mapped_column(Integer)
+    issue: Mapped[str | None] = mapped_column(String(60), index=True)   # aggregate issue bucket
+    stance: Mapped[str | None] = mapped_column(String(10))              # support|oppose|neutral
     locations: Mapped[list] = mapped_column(JSONB, default=list)
     lat: Mapped[float | None] = mapped_column(Float)
     lon: Mapped[float | None] = mapped_column(Float)

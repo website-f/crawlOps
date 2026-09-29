@@ -19,6 +19,10 @@ DEFAULTS: dict[str, dict] = {
         "default_threshold": 55,
         "retention_days": 90,
     },
+    "issues": {
+        "list": ["economy", "cost of living", "jobs", "healthcare", "education",
+                 "security", "corruption", "environment", "infrastructure", "housing"],
+    },
 }
 
 

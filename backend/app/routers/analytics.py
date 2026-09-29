@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
-from sqlalchemy import Text, func
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import Text, and_, func
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -157,6 +157,73 @@ def flow(topic_id: int | None = None, days: int = 30, db: Session = Depends(get_
 @router.get("/pyramid")
 def pyramid(topic_id: int | None = None, days: int = 30, db: Session = Depends(get_db)):
     return insights.author_pyramid(db, topic_id, days)
+
+
+@router.get("/issues")
+def issues(topic_id: int | None = None, days: int = 30, db: Session = Depends(get_db)):
+    """Aggregate audience & issue intelligence (no individual profiling)."""
+    return {"issues": insights.issues(db, topic_id, days)}
+
+
+@router.get("/anomalies")
+def anomalies(topic_id: int | None = None, days: int = 30, db: Session = Depends(get_db)):
+    return insights.anomalies(db, topic_id, days)
+
+
+@router.get("/topic-model")
+def topic_model(topic_id: int | None = None, days: int = 14, db: Session = Depends(get_db)):
+    return insights.topic_model(db, topic_id, days)
+
+
+# ---- Data Explorer: generic aggregate pivot (dimension x measure x filters) ----
+
+_DIM_COL = {"platform": Post.platform, "sentiment": Post.sentiment, "emotion": Post.emotion,
+            "issue": Post.issue, "stance": Post.stance, "country": Post.country_name,
+            "lang": Post.lang, "domain": Post.domain}
+
+
+@router.get("/pivot")
+def pivot(dimension: str = "platform", measure: str = "count",
+          topic_id: int | None = None, days: int = 30, limit: int = 30,
+          db: Session = Depends(get_db)):
+    """Self-serve aggregation: group visible posts by a dimension and compute a
+    measure. Aggregate rows only — the building block of the Data Explorer."""
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    base = [Post.is_hidden.is_(False), Post.posted_at >= since]
+    if topic_id:
+        base.append(Post.topic_id == topic_id)
+
+    if dimension == "day":
+        col = func.date_trunc("day", Post.posted_at)
+        label_fn = lambda v: v.date().isoformat() if v else "?"  # noqa: E731
+    elif dimension == "topic":
+        col = func.jsonb_array_elements_text(Post.topics)
+        label_fn = str
+    else:
+        col = _DIM_COL.get(dimension)
+        if col is None:
+            raise HTTPException(400, f"unknown dimension '{dimension}'")
+        label_fn = lambda v: v if v is not None else "(none)"  # noqa: E731
+
+    measures = {
+        "count": func.count(),
+        "reach": func.coalesce(func.sum(Post.reach), 0),
+        "emv": func.coalesce(func.sum(Post.emv), 0),
+        "avg_sentiment": func.coalesce(func.avg(Post.sentiment_score), 0),
+        "engagement": func.coalesce(func.sum(
+            func.coalesce(Post.engagement["likes"].as_float(), 0)
+            + func.coalesce(Post.engagement["comments"].as_float(), 0)
+            + func.coalesce(Post.engagement["shares"].as_float(), 0)), 0),
+    }
+    m = measures.get(measure)
+    if m is None:
+        raise HTTPException(400, f"unknown measure '{measure}'")
+
+    order = col if dimension == "day" else m.desc()
+    rows = (db.query(col.label("k"), m.label("v")).filter(and_(*base))
+            .group_by("k").order_by(order).limit(min(limit, 200)).all())
+    data = [{"key": label_fn(k), "value": round(float(v), 2)} for k, v in rows if k is not None]
+    return {"dimension": dimension, "measure": measure, "rows": data}
 
 
 @router.get("/heatmap")

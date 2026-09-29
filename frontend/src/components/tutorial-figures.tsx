@@ -176,6 +176,40 @@ export function FigConnect() {
   )
 }
 
+export function FigAudience() {
+  const issues = [
+    { name: 'cost of living', sup: 20, neu: 25, opp: 55, res: 0.9 },
+    { name: 'economy', sup: 45, neu: 35, opp: 20, res: 0.6 },
+    { name: 'healthcare', sup: 55, neu: 30, opp: 15, res: 0.4 },
+  ]
+  return (
+    <Frame active="Overview" h={330}>
+      <Label x={152} y={30} t="Audience & Issues" s={15} b />
+      <Label x={152} y={48} t="Aggregate opinion segments from public posts" s={10} c={MUT} />
+      {issues.map((it, i) => {
+        const y = 64 + i * 82
+        return (
+          <g key={it.name}>
+            <Box x={152} y={y} w={456} h={72} />
+            <Label x={168} y={y + 22} t={it.name} s={12} b />
+            <Label x={168} y={y + 40} t="stance" s={9} c={MUT} />
+            <rect x={210} y={y + 32} width={140} height={7} rx={3} fill="#0ca30c" />
+            <rect x={210 + 140 * it.sup / 100} y={y + 32} width={140 * it.neu / 100} height={7} fill="#898781" />
+            <rect x={210 + 140 * (it.sup + it.neu) / 100} y={y + 32} width={140 * it.opp / 100} height={7} rx={3} fill="#d03b3b" />
+            <Label x={168} y={y + 58} t="resonance" s={9} c={MUT} />
+            <rect x={230} y={y + 50} width={120} height={7} rx={3} fill="#e1e0d9" />
+            <rect x={230} y={y + 50} width={120 * it.res} height={7} rx={3} fill="#4a3aa7" />
+            <Label x={470} y={y + 30} t="Top regions" s={9} c={MUT} />
+            <Label x={470} y={y + 46} t="MY · SG · ID" s={10} c={SEC} />
+          </g>
+        )
+      })}
+      <Ring x={310} y={98} r={26} n={1} />
+      <Note x={430} y={64} w={175} lines={['1. Stance split', 'support / neutral / oppose']} />
+    </Frame>
+  )
+}
+
 // The data pipeline as a visual flow: Sources -> Crawl -> AI Judge -> Store -> Surfaces.
 export function FlowDiagram() {
   const stages: { x: number; title: string; sub: string; color: string }[] = [

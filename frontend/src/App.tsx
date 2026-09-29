@@ -1,8 +1,8 @@
 import {
   IconAntenna, IconBell, IconChartArcs, IconCpu, IconFileText, IconHeartRateMonitor,
   IconHelp, IconLayoutDashboard, IconLogout, IconMap2, IconMenu2, IconMoodSmile,
-  IconPlanet, IconPlug, IconScale, IconSettings, IconTargetArrow, IconUserOff,
-  IconUsersGroup, IconX,
+  IconPlanet, IconPlug, IconScale, IconSettings, IconTable, IconTargetArrow,
+  IconUserOff, IconUsersGroup, IconUsers, IconX,
 } from '@tabler/icons-react'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
@@ -13,7 +13,9 @@ import Login from './pages/Login'
 const AIEngine = lazy(() => import('./pages/AIEngine'))
 const Alerts = lazy(() => import('./pages/Alerts'))
 const Analytics = lazy(() => import('./pages/Analytics'))
+const Audience = lazy(() => import('./pages/Audience'))
 const Competitors = lazy(() => import('./pages/Competitors'))
+const DataExplorer = lazy(() => import('./pages/DataExplorer'))
 const Feed = lazy(() => import('./pages/Feed'))
 const Galaxy = lazy(() => import('./pages/Galaxy'))
 const MapView = lazy(() => import('./pages/MapView'))
@@ -40,9 +42,11 @@ const GROUPS: { label: string; items: { to: string; label: string; Icon: any }[]
       { to: '/analytics/sentiment', label: 'Sentiment & Emotions', Icon: IconMoodSmile },
       { to: '/analytics/trends', label: 'Trends', Icon: IconChartArcs },
       { to: '/analytics/influencers', label: 'Influencers', Icon: IconUsersGroup },
+      { to: '/audience', label: 'Audience & Issues', Icon: IconUsers },
       { to: '/galaxy', label: 'Galaxy', Icon: IconPlanet },
       { to: '/analytics/brief', label: 'Daily Brief', Icon: IconFileText },
       { to: '/competitors', label: 'Competitors', Icon: IconScale },
+      { to: '/explore', label: 'Data Explorer', Icon: IconTable },
     ],
   },
   {
@@ -145,6 +149,8 @@ function Shell() {
           <Route path="/analytics/trends" element={<Analytics view="trends" />} />
           <Route path="/analytics/influencers" element={<Analytics view="influencers" />} />
           <Route path="/competitors" element={<Competitors />} />
+          <Route path="/audience" element={<Audience />} />
+          <Route path="/explore" element={<DataExplorer />} />
           <Route path="/galaxy" element={<Galaxy />} />
           <Route path="/map" element={<MapView />} />
           <Route path="/alerts" element={<Alerts />} />

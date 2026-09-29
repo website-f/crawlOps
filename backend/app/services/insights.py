@@ -322,38 +322,42 @@ def sentiment_waterfall(db: Session, topic_id: int | None, days: int = 30) -> li
     return out
 
 
-def forecast(db: Session, topic_id: int | None, days: int = 30, horizon: int = 7) -> dict:
-    """Least-squares projection of daily volume + negative-share early warning."""
+def _daily_volume(db: Session, topic_id: int | None, days: int):
     f = _scope(topic_id, days)
-    rows = (db.query(func.date_trunc("day", Post.posted_at).label("d"), func.count(),
-                     func.count().filter(Post.sentiment == "neg"))
+    return (db.query(func.date_trunc("day", Post.posted_at).label("d"), func.count())
             .filter(and_(*f)).group_by("d").order_by("d").all())
+
+
+def forecast(db: Session, topic_id: int | None, days: int = 30, horizon: int = 7) -> dict:
+    """Daily-volume forecast via the ML layer (Holt exponential smoothing, with a
+    least-squares fallback). Aggregate only."""
+    from . import ml
+    rows = _daily_volume(db, topic_id, days)
     if len(rows) < 4:
-        return {"history": [], "projection": [], "trend": "flat", "confidence": "low"}
-    vols = [c for _, c, _ in rows]
-    n = len(vols)
-    xs = list(range(n))
-    mean_x = sum(xs) / n
-    mean_y = sum(vols) / n
-    denom = sum((x - mean_x) ** 2 for x in xs) or 1
-    slope = sum((xs[i] - mean_x) * (vols[i] - mean_y) for i in range(n)) / denom
-    intercept = mean_y - slope * mean_x
-    resid = [vols[i] - (intercept + slope * xs[i]) for i in range(n)]
-    rmse = (sum(r * r for r in resid) / n) ** 0.5
+        return {"history": [], "projection": [], "trend": "flat", "confidence": "low", "method": "none"}
+    history = [{"day": d.date().isoformat(), "value": c} for d, c in rows]
     h = min(horizon, max(3, days // 2))
-    proj = []
-    for i in range(1, h + 1):
-        x = n - 1 + i
-        val = max(0, intercept + slope * x)
-        band = rmse * 1.28 * (1 + i * 0.06)
-        proj.append({"step": i, "value": round(val, 1),
-                     "low": round(max(0, val - band), 1), "high": round(val + band, 1)})
-    pct_per_week = (slope * 7 / mean_y * 100) if mean_y else 0
-    trend = "rising" if pct_per_week > 15 else "falling" if pct_per_week < -15 else "flat"
-    conf = "high" if abs(pct_per_week) < 5 or rmse < mean_y * 0.4 else "medium" if n >= 10 else "low"
-    return {"history": [{"day": d.date().isoformat(), "value": c} for d, c, _ in rows],
-            "projection": proj, "trend": trend, "pct_per_week": round(pct_per_week, 1),
-            "confidence": conf}
+    fc = ml.forecast_series([c for _, c in rows], h)
+    return {"history": history, **fc}
+
+
+def anomalies(db: Session, topic_id: int | None, days: int = 30) -> dict:
+    """Flag anomalous days in daily volume (PyOD ECOD, z-score fallback)."""
+    from . import ml
+    rows = _daily_volume(db, topic_id, days)
+    series = [{"day": d.date().isoformat(), "value": c} for d, c in rows]
+    flagged = ml.detect_anomalies(series)
+    return {"series": flagged, "anomalies": [s for s in flagged if s["anomaly"]]}
+
+
+def topic_model(db: Session, topic_id: int | None, days: int = 14, k: int = 6) -> dict:
+    """Unsupervised theme discovery (TF-IDF + NMF) over recent post text."""
+    from . import ml
+    f = _scope(topic_id, days)
+    rows = (db.query(Post.title, Post.text).filter(and_(*f))
+            .order_by(Post.posted_at.desc()).limit(1500).all())
+    texts = [f"{t or ''} {x or ''}".strip() for t, x in rows]
+    return {"themes": ml.topic_model(texts, k)}
 
 
 PLATFORM_COLOR = {
@@ -416,6 +420,43 @@ def galaxy(db: Session, topic_id: int | None, days: int = 7, limit: int = 700) -
     return {"title": title, "core": health["score"], "grade": health["grade"],
             "total": len(posts), "avgSentiment": round(float(avg_sent or 0), 2),
             "sources": sources, "stars": stars, "topics": topics, "trends": trends}
+
+
+def issues(db: Session, topic_id: int | None, days: int = 30) -> list[dict]:
+    """Aggregate audience & issue intelligence — per issue: volume, stance split,
+    sentiment split, resonance (avg engagement), and top regions. Fully aggregate:
+    counts only, never per-person profiles or targeting lists."""
+    f = _scope(topic_id, days, [Post.issue.isnot(None)])
+    rows = (db.query(
+                Post.issue,
+                func.count().label("total"),
+                func.count().filter(Post.stance == "support").label("support"),
+                func.count().filter(Post.stance == "oppose").label("oppose"),
+                func.count().filter(Post.stance == "neutral").label("neutral"),
+                func.count().filter(Post.sentiment == "pos").label("pos"),
+                func.count().filter(Post.sentiment == "neu").label("neu"),
+                func.count().filter(Post.sentiment == "neg").label("neg"),
+                func.coalesce(func.avg(Post.sentiment_score), 0).label("avg_sent"),
+                func.coalesce(func.avg(
+                    func.coalesce(Post.engagement["likes"].as_float(), 0)
+                    + func.coalesce(Post.engagement["comments"].as_float(), 0)
+                    + func.coalesce(Post.engagement["shares"].as_float(), 0)), 0).label("resonance"))
+            .filter(and_(*f)).group_by(Post.issue)
+            .order_by(func.count().desc()).all())
+    out = []
+    for r in rows:
+        regions = (db.query(Post.country_name, func.count())
+                   .filter(and_(*f, Post.issue == r.issue, Post.country_name.isnot(None)))
+                   .group_by(Post.country_name).order_by(func.count().desc()).limit(5).all())
+        out.append({
+            "issue": r.issue, "total": r.total,
+            "stance": {"support": r.support, "oppose": r.oppose, "neutral": r.neutral},
+            "sentiment": {"pos": r.pos, "neu": r.neu, "neg": r.neg},
+            "avg_sentiment": round(float(r.avg_sent), 2),
+            "resonance": round(float(r.resonance), 1),
+            "top_regions": [{"name": n, "count": c} for n, c in regions],
+        })
+    return out
 
 
 def author_pyramid(db: Session, topic_id: int | None, days: int = 30) -> dict:

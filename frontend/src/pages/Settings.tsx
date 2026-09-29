@@ -6,6 +6,7 @@ interface AllSettings {
   cpm: Record<string, number>
   notifiers: { webhook_url: string; telegram_bot_token: string; telegram_chat_id: string }
   pipeline: { default_threshold: number; retention_days: number }
+  issues: { list: string[] }
 }
 
 interface AppUser { id: number; username: string; role: string }
@@ -101,6 +102,20 @@ export default function Settings() {
               className="border border-grid rounded-lg px-2 py-1 w-20 ml-2" />
           </label>
         </div>
+      </section>
+
+      <section className="bg-white border border-grid rounded-2xl p-5">
+        <div className="flex items-center mb-1">
+          <h3 className="font-semibold">Issue list (Audience &amp; Issues)</h3>
+          <button onClick={() => save('issues')}
+            className="ml-auto inline-flex items-center gap-1.5 text-sm text-[#2a78d6]">
+            <IconDeviceFloppy size={15} stroke={2} />{saved === 'issues' ? 'Saved' : 'Save'}
+          </button>
+        </div>
+        <p className="text-sm text-inksec mb-2">The AI judge classifies each post into the closest of these issues (or "other"). One per line.</p>
+        <textarea rows={6} value={(s.issues?.list || []).join('\n')}
+          onChange={(e) => setS({ ...s, issues: { list: e.target.value.split('\n').map((x) => x.trim()).filter(Boolean) } })}
+          className="w-full border border-grid rounded-lg px-3 py-2 text-sm font-mono text-[13px]" />
       </section>
 
       <section className="bg-white border border-grid rounded-2xl p-5">

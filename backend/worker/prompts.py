@@ -22,6 +22,8 @@ Respond with ONLY a JSON object:
 - locations: array of 0-2 real-world place names mentioned or clearly implied (city/state/country), else []
 - virality: integer 0-100 — how shareable/likely-to-spread this content is
 - risk: integer 0-100 — reputational risk this post poses to the subject (0 = harmless, 100 = crisis-grade)
+- issue: the single closest matching issue from this list (lowercase, exactly as written), or "other": {issues}
+- stance: "support" | "oppose" | "neutral" — the post's position toward the subject of interest
 - spam_or_bot: boolean — true if this looks like spam, coordinated promotion, or bot output
 - reason: string under 150 chars explaining the relevance score"""
 
@@ -39,12 +41,17 @@ Post:
 Respond with JSON only."""
 
 
+DEFAULT_ISSUES = ["economy", "cost of living", "jobs", "healthcare", "education",
+                  "security", "corruption", "environment", "infrastructure", "housing"]
+
+
 def build_judge_messages(criteria: str, platform: str, author: str,
-                         title: str, content: str) -> list[dict]:
+                         title: str, content: str, issues: list[str] | None = None) -> list[dict]:
     nonce = secrets.token_hex(6)
     open_m, close_m = f"<<POST-{nonce}>>", f"<</POST-{nonce}>>"
+    issue_list = ", ".join(issues or DEFAULT_ISSUES)
     return [
-        {"role": "system", "content": JUDGE_SYSTEM.format(open=open_m, close=close_m)},
+        {"role": "system", "content": JUDGE_SYSTEM.format(open=open_m, close=close_m, issues=issue_list)},
         {"role": "user", "content": JUDGE_USER.format(
             criteria=criteria.strip() or "General monitoring — score topical relevance to the boolean query subject.",
             platform=platform, author=author or "unknown", title=title or "(none)",

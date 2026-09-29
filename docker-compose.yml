@@ -67,8 +67,11 @@ services:
       RUSTFS_ACCESS_KEY: ${MINIO_ROOT_USER:-crawlops}
       RUSTFS_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-crawlops_dev_secret}
       RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_OBS_LOG_DIRECTORY: /logs
+    user: root  # RustFS needs to own /data + /logs on the named volumes
     volumes:
       - miniodata:/data
+      - miniologs:/logs
     ports:
       - "${BIND_ADDR:-127.0.0.1}:${MINIO_CONSOLE_PORT:-8404}:9001"
     healthcheck:
@@ -160,9 +163,52 @@ services:
     expose:
       - "1200"
 
+  # Self-serve BI / "data visual management": drag-drop dashboards on the CrawlOps
+  # data. In Metabase, add a Postgres data source → host: postgres, db: crawlops,
+  # user/pass from .env. Uses its own embedded app db (H2) on a volume.
+  metabase:
+    image: metabase/metabase:latest
+    restart: unless-stopped
+    volumes:
+      - metabasedata:/metabase-data
+    environment:
+      MB_DB_FILE: /metabase-data/metabase.db
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${METABASE_PORT:-8405}:3000"
+
+  # ---- opt-in big-data profile (start with: docker compose --profile bigdata up -d) ----
+  # ClickHouse: columnar OLAP for 100M+ rows. Mirror posts here for heavy analytics.
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8-alpine
+    profiles: ["bigdata"]
+    restart: unless-stopped
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-crawlops}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-crawlops_dev}
+    volumes:
+      - clickhousedata:/var/lib/clickhouse
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${CLICKHOUSE_PORT:-8123}:8123"
+
+  # Qdrant: vector DB for semantic search / RAG over post embeddings.
+  qdrant:
+    image: qdrant/qdrant:latest
+    profiles: ["bigdata"]
+    restart: unless-stopped
+    volumes:
+      - qdrantdata:/qdrant/storage
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${QDRANT_PORT:-6333}:6333"
+
 volumes:
   pgdata:
   redisdata:
   meilidata:
   miniodata:
+  miniologs:
   camofox_cookies:
+  metabasedata:
+  clickhousedata:
+  qdrantdata:

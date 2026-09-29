@@ -42,6 +42,7 @@ export default function Analytics({ view = 'overview' }: { view?: AnalyticsView 
   const [forecast, setForecast] = useState<any>({ history: [], projection: [] })
   const [waterfall, setWaterfall] = useState<any[]>([])
   const [constellation, setConstellation] = useState<any>({ nodes: [], edges: [] })
+  const [themes, setThemes] = useState<any[]>([])
   const [network, setNetwork] = useState<any>({ nodes: [] })
   const [discourse, setDiscourse] = useState<any>({ clusters: [] })
   const [narratives, setNarratives] = useState<any>({ narratives: [] })
@@ -75,6 +76,7 @@ export default function Analytics({ view = 'overview' }: { view?: AnalyticsView 
       get(`/analytics/momentum${scope}`).then(setMomentum).catch(() => {})
       get(`/analytics/constellation${scope}`).then(setConstellation).catch(() => {})
       get(`/analytics/heatmap${scope}`).then((d) => setHeatmap(d.grid)).catch(() => {})
+      get(`/analytics/topic-model${scope}`).then((d) => setThemes(d.themes || [])).catch(() => {})
       get(`/analytics/discourse${scope}`).then(setDiscourse).catch(() => {})
     }
     if (need('influencers')) {
@@ -345,6 +347,21 @@ export default function Analytics({ view = 'overview' }: { view?: AnalyticsView 
                 <ConstellationGraph nodes={constellation.nodes} edges={constellation.edges} />
               </Panel>
             </div>
+            <Panel title="Discovered themes" right={<span className="text-xs text-muted">ML · TF-IDF + NMF, no AI key</span>}>
+              {themes.length ? (
+                <div className="space-y-1.5">
+                  {themes.map((t: any, i: number) => (
+                    <div key={i} className="flex items-center gap-2 text-sm">
+                      <span className="w-52 truncate">{t.label}</span>
+                      <div className="flex-1 h-2 rounded-full bg-grid overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${t.share}%`, background: '#4a3aa7' }} />
+                      </div>
+                      <span className="tabular-nums text-xs text-inksec w-10 text-right">{t.share}%</span>
+                    </div>
+                  ))}
+                </div>
+              ) : <div className="text-muted text-sm py-8 text-center">Need ~12+ posts with text to discover themes.</div>}
+            </Panel>
             <Panel title="Discourse families" right={<span className="text-xs text-muted">AI classified</span>}>
               {discourse.clusters?.length ? (
                 <div className="space-y-1.5">

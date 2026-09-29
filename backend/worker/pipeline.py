@@ -46,6 +46,7 @@ async def run_topic(db: DbSession, topic: Topic) -> dict:
     hidden_authors = {(s.platform, s.author_key) for s in
                       db.query(SuppressedAuthor).filter(SuppressedAuthor.mode == "hide").all()}
     cpm_table = get_setting(db, "cpm")
+    issues = get_setting(db, "issues").get("list") or None
 
     totals = {"found": 0, "inserted": 0}
     for source in sources:
@@ -71,7 +72,7 @@ async def run_topic(db: DbSession, topic: Topic) -> dict:
             except SelectorBroken as e:
                 mentions = await _heal_and_retry(db, source, e)
             run.found = len(mentions)
-            inserted = await _ingest(db, topic, cq, mentions, hidden_authors, cpm_table)
+            inserted = await _ingest(db, topic, cq, mentions, hidden_authors, cpm_table, issues)
             run.inserted = inserted
             totals["found"] += run.found
             totals["inserted"] += inserted
@@ -100,7 +101,8 @@ async def _heal_and_retry(db: DbSession, source: Source, err: SelectorBroken) ->
 
 
 async def _ingest(db: DbSession, topic: Topic, cq, mentions: list[RawMention],
-                  hidden_authors: set, cpm_table: dict | None = None) -> int:
+                  hidden_authors: set, cpm_table: dict | None = None,
+                  issues: list | None = None) -> int:
     # near-dup candidates: recent simhashes for this topic
     recent = (db.query(Post.simhash, Post.dup_group)
               .filter(Post.topic_id == topic.id, Post.simhash.isnot(None))
@@ -147,7 +149,7 @@ async def _ingest(db: DbSession, topic: Topic, cq, mentions: list[RawMention],
         cc = (m.country or None) or country_from_domain(post.domain) or country_from_url(post.url)
         if cc:
             post.country, post.country_name = cc, country_name(cc)
-        await _enrich(db, topic, post, m, cpm_table)
+        await _enrich(db, topic, post, m, cpm_table, issues)
         db.add(post)
         db.flush()
         docs.append(meili.doc_from_post(post))
@@ -172,13 +174,13 @@ def _index_safe(docs: list[dict]) -> None:
 
 
 async def _enrich(db: DbSession, topic: Topic, post: Post, m: RawMention,
-                  cpm_table: dict | None = None) -> None:
+                  cpm_table: dict | None = None, issues: list | None = None) -> None:
     """LLM judge + deterministic scoring. Degrades to 'pending' when rotation is dry."""
     try:
         data = await gateway.chat_json(
             "judge",
             build_judge_messages(topic.criteria, m.platform,
-                                 m.author_name or m.author_handle, m.title, m.text),
+                                 m.author_name or m.author_handle, m.title, m.text, issues),
             max_tokens=400)
         post.relevance = max(0, min(100, int(data.get("relevance", 0))))
         post.sentiment = data.get("sentiment") if data.get("sentiment") in ("neg", "neu", "pos") else "neu"
@@ -190,6 +192,8 @@ async def _enrich(db: DbSession, topic: Topic, post: Post, m: RawMention,
         post.entities = [str(e)[:60] for e in (data.get("entities") or [])[:5]]
         post.virality = _clamp_int(data.get("virality"))
         post.risk = _clamp_int(data.get("risk"))
+        post.issue = (str(data.get("issue"))[:60] or None) if data.get("issue") else None
+        post.stance = data.get("stance") if data.get("stance") in ("support", "oppose", "neutral") else "neutral"
         post.locations = [str(x)[:250] for x in (data.get("locations") or [])[:2]]
         post.bot_suspect = bool(data.get("spam_or_bot", False))
         post.enrichment_status = "done"
@@ -230,6 +234,7 @@ async def catchup_enrichment(db: DbSession) -> int:
     if not pending:
         return 0
     cpm_table = get_setting(db, "cpm")
+    issues = get_setting(db, "issues").get("list") or None
     done = 0
     for post in pending:
         topic = db.get(Topic, post.topic_id)
@@ -240,7 +245,7 @@ async def catchup_enrichment(db: DbSession) -> int:
                        text=post.text, title=post.title,
                        author_name=post.author_name, author_handle=post.author_handle)
         before = post.enrichment_status
-        await _enrich(db, topic, post, m, cpm_table)
+        await _enrich(db, topic, post, m, cpm_table, issues)
         if post.enrichment_status == "done" and before != "done":
             done += 1
             try:

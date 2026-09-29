@@ -1,12 +1,12 @@
 import {
   IconAntenna, IconBell, IconBolt, IconBrandChrome, IconChartArcs, IconCpu,
   IconHome, IconMap2, IconMoodSmile, IconPlug, IconRocket, IconScale,
-  IconShieldLock, IconTargetArrow, IconWorld,
+  IconShieldLock, IconTargetArrow, IconUsersGroup, IconWorld,
 } from '@tabler/icons-react'
 import { useState } from 'react'
 import {
-  FigAIEngine, FigConnect, FigExport, FigFeedGroup, FigGalaxyFig, FigTopic,
-  FlowDiagram,
+  FigAIEngine, FigAudience, FigConnect, FigExport, FigFeedGroup, FigGalaxyFig,
+  FigTopic, FlowDiagram,
 } from '../components/tutorial-figures'
 
 interface Step { n: number; title: string; body: string; tip?: string }
@@ -56,6 +56,16 @@ const WALKTHROUGH: Section[] = [
     Fig: FigExport,
   },
   {
+    key: 'audience', label: 'Audience & Issues', Icon: IconUsersGroup,
+    intro: 'Understand which issues the public cares about, how opinion leans, and what resonates — all aggregate and anonymous. No per-person profiling.',
+    steps: [
+      { n: 1, title: 'Configure issues', body: 'Settings → Issue list defines the buckets the AI judge sorts posts into (economy, cost of living, healthcare…). Edit it to fit your domain.' },
+      { n: 2, title: 'Read the segments', body: 'Each issue card shows volume, a stance split (support / neutral / oppose), sentiment, and resonance (average engagement) — so you see what the public cares about and how strongly.' },
+      { n: 3, title: 'Act on it', body: 'Use it to choose which themes to lead with and where (top regions per issue). It is audience intelligence, not individual targeting.', tip: 'Pair with Competitors for share of voice by issue.' },
+    ],
+    Fig: FigAudience,
+  },
+  {
     key: 'competitors', label: 'Competitors', Icon: IconScale,
     intro: 'Track your brand against named competitors and see who owns the conversation.',
     steps: [
@@ -74,6 +84,15 @@ const WALKTHROUGH: Section[] = [
       { n: 4, title: 'Crawl', body: 'Once a session shows "cookies set", the crawler browses that platform logged-in on the topic\'s next cycle.' },
     ],
     Fig: FigConnect,
+  },
+  {
+    key: 'explore', label: 'Data Explorer & BI', Icon: IconChartArcs,
+    intro: 'Slice the aggregate data yourself, and use ML forecasting/anomaly detection — plus full drag-drop dashboards via the built-in Metabase.',
+    steps: [
+      { n: 1, title: 'Data Explorer', body: 'Analyze → Data Explorer. Pick a dimension (platform, issue, country, day…) and a measure (volume, reach, EMV, engagement, avg sentiment), then choose bar/line/pie/table.' },
+      { n: 2, title: 'ML signals', body: 'Brand Health shows a Holt-smoothing volume forecast; alerts use PyOD anomaly detection on daily volume; Trends can surface NMF-discovered themes. These are aggregate models — no per-person prediction.' },
+      { n: 3, title: 'Full BI (Metabase)', body: 'Click "Full BI" to open Metabase (port 8405). Add a Postgres data source (host: postgres, db: crawlops) once, then build unlimited dashboards.', tip: 'For very large scale, enable the bigdata profile (ClickHouse + Qdrant): docker compose --profile bigdata up -d.' },
+    ],
   },
   {
     key: 'ai', label: 'AI Engine', Icon: IconCpu,
