@@ -53,7 +53,9 @@ function SankeyNode(props: any) {
   const layer = payload?.layer ?? 0
   const fill = nodeFill(payload)
   const right = layer === 2
-  const label = payload?.name ?? ''
+  const sent = sentimentOf(payload)
+  // the API sends pos/neu/neg; spell them out in the one place a reader looks
+  const label = (sent && (SENTIMENT as any)[sent]?.label) || payload?.name || ''
   const tx = right ? x - 8 : x + width + 8
   return (
     <g>
