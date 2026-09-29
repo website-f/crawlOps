@@ -96,19 +96,30 @@ def _proxy_pool() -> list[dict]:
     return pool
 
 
+_domain_locks: dict = {}
+
+
 async def _respect_rate(domain: str) -> None:
     interval = DOMAIN_MIN_INTERVAL.get(domain, 0.15)
-    try:
-        from app.services.proxy_manager import proxy_manager
-        r = proxy_manager.r
-        key = f"ratelimit:{domain}"
-        last = float(r.get(key) or 0)
-        wait = interval - (_time.time() - last)
-        if wait > 0:
-            await asyncio.sleep(min(wait, interval))
-        r.set(key, _time.time(), ex=3600)
-    except Exception:  # noqa: BLE001
-        pass  # rate limiting is best-effort; never block a fetch on Redis
+    # One lock per domain, held across the read-sleep-write. Without it the fetch
+    # phase's concurrent connectors all read the same "last" timestamp, sleep the
+    # same amount and then fire simultaneously — which is how GDELT (1 req/5s) was
+    # getting rate-limited despite being configured at 5.0s.
+    lock = _domain_locks.get(domain)
+    if lock is None:
+        lock = _domain_locks[domain] = asyncio.Lock()
+    async with lock:
+        try:
+            from app.services.proxy_manager import proxy_manager
+            r = proxy_manager.r
+            key = f"ratelimit:{domain}"
+            last = float(r.get(key) or 0)
+            wait = interval - (_time.time() - last)
+            if wait > 0:
+                await asyncio.sleep(min(wait, interval))
+            r.set(key, _time.time(), ex=3600)
+        except Exception:  # noqa: BLE001
+            pass  # rate limiting is best-effort; never block a fetch on Redis
 
 
 async def request(url: str, params: dict | None = None, headers: dict | None = None,
@@ -155,10 +166,21 @@ async def fetch_json(url: str, params: dict | None = None, headers: dict | None 
                      timeout: float = 25, retries: tuple = (0,), purpose: str = "tier2"):
     # `retries` kept for signature compat; attempt count is derived from it + a floor of 3
     attempts = max(3, len(retries))
-    r = await request(url, params=params, headers=headers, timeout=timeout,
-                      attempts=attempts, purpose=purpose)
-    r.raise_for_status()
-    return r.json()
+    last_body = ""
+    for attempt in range(attempts):
+        r = await request(url, params=params, headers=headers, timeout=timeout,
+                          attempts=attempts, purpose=purpose)
+        r.raise_for_status()
+        try:
+            return r.json()
+        except ValueError:
+            # A 200 whose body isn't JSON is how some APIs report throttling — GDELT
+            # answers "Please limit requests to one every 5 seconds" with status 200,
+            # which used to surface as a baffling "Expecting value: line 1 column 1".
+            last_body = (r.text or "").strip()[:200]
+            await asyncio.sleep(min(10, 3.0 * (attempt + 1)))
+    raise RuntimeError(
+        f"{urlparse(url).netloc} returned non-JSON ({last_body!r})")
 
 
 async def fetch_text(url: str, params: dict | None = None, headers: dict | None = None,
