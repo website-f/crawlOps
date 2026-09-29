@@ -70,8 +70,12 @@ import time as _time
 from urllib.parse import urlparse
 
 # polite minimum seconds between hits to the same host (Redis-coordinated across workers)
+# A 429 pushes the whole domain's next-allowed time out by this much per attempt.
+RATE_PENALTY_S = 15.0
 DOMAIN_MIN_INTERVAL = {
-    "api.gdeltproject.org": 5.0, "export.arxiv.org": 3.0, "efts.sec.gov": 1.0,
+    # GDELT publishes 1 req/5s but throttles harder in practice; 8s buys headroom
+    # so a burst of concurrent topics doesn't spend its budget on 429 retries.
+    "api.gdeltproject.org": 8.0, "export.arxiv.org": 3.0, "efts.sec.gov": 1.0,
     "en.wikipedia.org": 0.5, "api.stackexchange.com": 0.4, "api.github.com": 1.0,
     "hn.algolia.com": 0.3, "www.reddit.com": 2.0, "clinicaltrials.gov": 0.5,
     "news.google.com": 1.0,
@@ -122,6 +126,17 @@ async def _respect_rate(domain: str) -> None:
             pass  # rate limiting is best-effort; never block a fetch on Redis
 
 
+def _penalize_rate(domain: str, seconds: float) -> None:
+    """Push the domain's next-allowed time into the future after a 429, so every
+    other coroutine waiting on this domain backs off too — not just this caller.
+    A published limit is a floor, not a guarantee; this is what actually adapts."""
+    try:
+        from app.services.proxy_manager import proxy_manager
+        proxy_manager.r.set(f"ratelimit:{domain}", _time.time() + seconds, ex=3600)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 async def request(url: str, params: dict | None = None, headers: dict | None = None,
                   timeout: float = 25, attempts: int = 3,
                   purpose: str = "tier2") -> httpx.Response:
@@ -148,6 +163,9 @@ async def request(url: str, params: dict | None = None, headers: dict | None = N
             if r.status_code in (429, 403, 451, 503) or r.status_code >= 500:
                 if proxy:
                     proxy_manager.report(proxy["id"], "soft_block")
+                if r.status_code == 429:
+                    # make every other caller on this domain wait, not just us
+                    _penalize_rate(domain, RATE_PENALTY_S * (attempt + 1))
                 last = RuntimeError(f"{r.status_code} from {domain}")
                 await asyncio.sleep(min(8, 1.5 * (attempt + 1)))  # backoff
                 continue
