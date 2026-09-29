@@ -136,6 +136,11 @@ class Gateway:
             return content, {"provider": p["name"], "model": p["model"]}
         raise GatewayUnavailable(last_err)
 
+    def available(self, task: str) -> bool:
+        """Is at least one provider configured + enabled for this task? (ignores
+        transient cooldowns.) Lets callers skip expensive prep when the AI is off."""
+        return bool(self._providers_for(task))
+
     async def chat_json(self, task: str, messages: list[dict], max_tokens: int = 800) -> dict:
         content, _ = await self.chat(task, messages, max_tokens=max_tokens, json_mode=True,
                                      accept=_is_json)

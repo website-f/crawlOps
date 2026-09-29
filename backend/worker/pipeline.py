@@ -1,5 +1,19 @@
-"""Central pipeline: fetch -> boolean filter -> dedup -> media cache -> judge ->
-score -> geo -> cluster -> store -> index (docs/ARCHITECTURE.md)."""
+"""Central pipeline: fetch -> boolean filter -> dedup -> media cache -> store ->
+(concurrent) article-extract -> judge -> embed -> score -> geo -> cluster -> index.
+
+Design (docs/ARCHITECTURE.md), tuned for throughput:
+  * Phase 1 — FETCH: every enabled source is fetched CONCURRENTLY (bounded). The
+    connectors only do network I/O here, never touch the DB, so parallelism is safe.
+  * Phase 2 — INGEST: results are written to Postgres SERIALLY (one Session is not
+    concurrency-safe). Posts land immediately as enrichment_status='pending' with
+    only deterministic fields set, so the feed fills live.
+  * Phase 3 — ENRICH: the expensive per-post work (full-article extraction, the LLM
+    judge, embeddings) runs CONCURRENTLY (bounded); the DB apply is serial.
+
+This removes the two historical bottlenecks: sources ran one-at-a-time, and every
+post was judged by a remote LLM inline & sequentially. The catch-up drain reuses the
+same concurrent path for anything deferred while providers were cooling.
+"""
 import asyncio
 import logging
 from datetime import datetime, timezone
@@ -20,7 +34,7 @@ from app.services.scoring import estimate_emv, estimate_reach
 from app.services.settings_store import get_setting
 
 from .connectors import build
-from .connectors.base import ROUND_DELAY_S, RawMention
+from .connectors.base import RawMention, fetch_text
 from .prompts import build_judge_messages
 from .stealth.camofox_client import LoginRequired, SelectorBroken
 
@@ -28,6 +42,25 @@ log = logging.getLogger("pipeline")
 
 EMOTIONS = {"joy", "trust", "anticipation", "surprise", "fear", "anger",
             "sadness", "disgust", "neutral"}
+
+# Concurrency caps. Fetch fans out across ~24 sources; enrich fans out across posts.
+# Both are bounded so we stay polite to remote APIs and don't stampede providers.
+FETCH_CONCURRENCY = 6
+ENRICH_CONCURRENCY = 6
+# Per-cycle inline enrichment cap: a cold-start topic can insert thousands of posts;
+# we enrich this many inline (fast, concurrent) and let catch-up drain the overflow so
+# one huge topic can't monopolise the tick loop.
+ENRICH_INLINE_CAP = 400
+# Full-article extraction is worth it for the news tier (headline+teaser -> full body).
+ARTICLE_PLATFORMS = {"news"}
+ARTICLE_MAX_CHARS = 8000
+# Hosts whose links are JS redirect wrappers, not real article pages — extraction
+# yields nothing, so don't waste a proxy fetch on them.
+ARTICLE_SKIP_HOSTS = ("news.google.com",)
+# Circuit breaker: a source that fails this many cycles in a row is skipped for a while
+# instead of being hammered (mirrors the gateway's provider cooldown).
+CONNECTOR_FAIL_THRESHOLD = 2
+CONNECTOR_COOLDOWN_S = 300
 
 
 def _clamp_int(v, lo: int = 0, hi: int = 100) -> int | None:
@@ -37,6 +70,17 @@ def _clamp_int(v, lo: int = 0, hi: int = 100) -> int | None:
         return None
 
 
+def _redis():
+    try:
+        from app.services.proxy_manager import proxy_manager
+        return proxy_manager.r
+    except Exception:  # noqa: BLE001
+        return None
+
+
+# --------------------------------------------------------------------------- #
+#  Phase orchestration                                                         #
+# --------------------------------------------------------------------------- #
 async def run_topic(db: DbSession, topic: Topic) -> dict:
     cq = compile_query(topic.query or topic.name)
     sources = db.query(Source).filter(Source.enabled.is_(True)).all()
@@ -47,38 +91,73 @@ async def run_topic(db: DbSession, topic: Topic) -> dict:
                       db.query(SuppressedAuthor).filter(SuppressedAuthor.mode == "hide").all()}
     cpm_table = get_setting(db, "cpm")
     issues = get_setting(db, "issues").get("list") or None
+    r = _redis()
 
-    totals = {"found": 0, "inserted": 0}
+    # Build connectors serially (reads config from the DB); skip cooling-down sources.
+    prepared: list[tuple[Source, object]] = []
     for source in sources:
+        if r is not None:
+            try:
+                if r.get(f"crawl:cooldown:{source.id}"):
+                    continue                         # circuit breaker: still cooling
+            except Exception:  # noqa: BLE001
+                pass
+        prepared.append((source, build(source.connector, db, source.config)))
+
+    # ---- Phase 1: concurrent network fetch (NO DB access inside tasks) ----
+    sem = asyncio.Semaphore(FETCH_CONCURRENCY)
+
+    async def _fetch(connector):
+        if connector is None or not connector.enabled():
+            return ("dormant", connector.disabled_reason() if connector else "not implemented")
+        async with sem:
+            try:
+                return ("ok", await connector.fetch(cq))
+            except LoginRequired as e:
+                return ("login", str(e))
+            except SelectorBroken as e:
+                return ("heal", e)
+            except Exception as e:  # noqa: BLE001 — one source failing never kills the cycle
+                return ("error", e)
+
+    fetched = await asyncio.gather(*[_fetch(c) for _, c in prepared])
+
+    # ---- Phase 2: serial ingest + FetchRun bookkeeping (DB writes serial) ----
+    totals = {"found": 0, "inserted": 0}
+    pairs: list[tuple[Post, RawMention]] = []          # posts to enrich this cycle
+    for (source, _connector), (status, payload) in zip(prepared, fetched):
         run = FetchRun(topic_id=topic.id, source_id=source.id)
         db.add(run)
         db.commit()
+        ok = False
         try:
-            connector = build(source.connector, db, source.config)
-            if connector is None or not connector.enabled():
+            if status == "dormant":
                 source.status = "dormant"
-                source.last_error = connector.disabled_reason() if connector else "not implemented"
+                source.last_error = payload
                 db.commit()
                 continue
-            try:
-                mentions = await connector.fetch(cq)
-            except LoginRequired as e:
-                # not an error — the platform needs logged-in cookies for this session
-                source.status = "dormant"
-                source.last_error = str(e)
+            if status == "login":
+                source.status = "dormant"           # needs logged-in cookies, not an error
+                source.last_error = payload
                 run.error = "login required"
                 db.commit()
                 continue
-            except SelectorBroken as e:
-                mentions = await _heal_and_retry(db, source, e)
+            if status == "heal":
+                mentions = await _heal_and_retry(db, source, payload)
+            elif status == "error":
+                raise payload
+            else:
+                mentions = payload
             run.found = len(mentions)
-            inserted = await _ingest(db, topic, cq, mentions, hidden_authors, cpm_table, issues)
+            inserted, new_pairs = await _ingest(db, topic, cq, mentions, hidden_authors)
             run.inserted = inserted
+            pairs.extend(new_pairs)
             totals["found"] += run.found
             totals["inserted"] += inserted
             source.status = "ok"
             source.last_error = None
-        except Exception as e:  # noqa: BLE001 — one source failing never kills the cycle
+            ok = True
+        except Exception as e:  # noqa: BLE001
             log.warning("source %s failed: %s", source.connector, e)
             source.status = "error"
             source.last_error = str(e)[:500]
@@ -87,11 +166,31 @@ async def run_topic(db: DbSession, topic: Topic) -> dict:
             source.last_run_at = datetime.now(timezone.utc)
             run.finished_at = datetime.now(timezone.utc)
             db.commit()
-        await asyncio.sleep(ROUND_DELAY_S)
+        _trip_breaker(r, source.id, ok)
+
+    # ---- Phase 3: concurrent enrichment of this cycle's new posts ----
+    if pairs:
+        await enrich_batch(db, topic, pairs, cpm_table, issues)
 
     topic.last_run_at = datetime.now(timezone.utc)
     db.commit()
     return totals
+
+
+def _trip_breaker(r, source_id: int, ok: bool) -> None:
+    """Track consecutive failures per source; open the breaker after the threshold."""
+    if r is None:
+        return
+    try:
+        if ok:
+            r.delete(f"crawl:fails:{source_id}")
+            return
+        fails = r.incr(f"crawl:fails:{source_id}")
+        r.expire(f"crawl:fails:{source_id}", 3600)
+        if fails >= CONNECTOR_FAIL_THRESHOLD:
+            r.set(f"crawl:cooldown:{source_id}", "1", ex=CONNECTOR_COOLDOWN_S)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 async def _heal_and_retry(db: DbSession, source: Source, err: SelectorBroken) -> list[RawMention]:
@@ -100,9 +199,11 @@ async def _heal_and_retry(db: DbSession, source: Source, err: SelectorBroken) ->
     return await agent_extract(db, source.platform, getattr(err, "snapshot", "") or "")
 
 
+# --------------------------------------------------------------------------- #
+#  Phase 2 — ingest (serial DB writes, deterministic fields only)             #
+# --------------------------------------------------------------------------- #
 async def _ingest(db: DbSession, topic: Topic, cq, mentions: list[RawMention],
-                  hidden_authors: set, cpm_table: dict | None = None,
-                  issues: list | None = None) -> int:
+                  hidden_authors: set) -> tuple[int, list[tuple[Post, RawMention]]]:
     # near-dup candidates: recent simhashes for this topic
     recent = (db.query(Post.simhash, Post.dup_group)
               .filter(Post.topic_id == topic.id, Post.simhash.isnot(None))
@@ -110,6 +211,7 @@ async def _ingest(db: DbSession, topic: Topic, cq, mentions: list[RawMention],
 
     inserted = 0
     docs = []
+    pairs: list[tuple[Post, RawMention]] = []
     for m in mentions:
         text_for_match = f"{m.title} {m.text}"
         if not cq.matches(text_for_match):          # central boolean AND/NOT filter
@@ -143,25 +245,28 @@ async def _ingest(db: DbSession, topic: Topic, cq, mentions: list[RawMention],
             text=m.text, title=m.title, lang=m.lang[:12], url=m.url, domain=m.domain[:200],
             posted_at=m.posted_at or datetime.now(timezone.utc),
             media=media, engagement=m.engagement, simhash=sh, dup_group=dup_group,
+            enrichment_status="pending",
         )
         # deterministic geo (keyless, Radar-style): source-declared country (GDELT)
         # first, then domain/url ccTLD. AI may refine with an inferred location later.
         cc = (m.country or None) or country_from_domain(post.domain) or country_from_url(post.url)
         if cc:
             post.country, post.country_name = cc, country_name(cc)
-        await _enrich(db, topic, post, m, cpm_table, issues)
+        # deterministic reach can be set now; emv waits on the judged sentiment.
+        post.reach = estimate_reach(post.platform, post.engagement, post.author_followers)
         db.add(post)
         db.flush()
         docs.append(meili.doc_from_post(post))
+        pairs.append((post, m))
         inserted += 1
-        if len(docs) >= 10:                          # progressive commit: feed fills live
+        if len(docs) >= 20:                          # progressive commit: feed fills live
             db.commit()
             _index_safe(docs)
             docs = []
 
     db.commit()
     _index_safe(docs)
-    return inserted
+    return inserted, pairs
 
 
 def _index_safe(docs: list[dict]) -> None:
@@ -173,37 +278,98 @@ def _index_safe(docs: list[dict]) -> None:
         log.warning("meilisearch indexing failed; posts remain in Postgres", exc_info=True)
 
 
-async def _enrich(db: DbSession, topic: Topic, post: Post, m: RawMention,
-                  cpm_table: dict | None = None, issues: list | None = None) -> None:
-    """LLM judge + deterministic scoring. Degrades to 'pending' when rotation is dry."""
+# --------------------------------------------------------------------------- #
+#  Phase 3 — enrichment (concurrent network, serial DB apply)                 #
+# --------------------------------------------------------------------------- #
+async def _extract_article(url: str) -> str | None:
+    """Fetch and extract the full article body for a news URL, via the rotating
+    proxy layer. Best-effort: any failure just leaves the RSS teaser in place."""
+    if not url:
+        return None
+    try:
+        import trafilatura
+    except Exception:  # noqa: BLE001 — dependency optional; degrade to teaser
+        return None
+    try:
+        html = await fetch_text(url, timeout=20, attempts=2, purpose="article")
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        body = trafilatura.extract(html, include_comments=False, include_tables=False,
+                                   favor_recall=True)
+    except Exception:  # noqa: BLE001
+        return None
+    return body or None
+
+
+async def _judge(topic: Topic, platform: str, author: str, title: str,
+                 text: str, issues) -> tuple[str, dict | None]:
+    """LLM judge for one post — pure network, safe to run concurrently.
+    Returns ('done', data) | ('pending', None) | ('failed', None)."""
     try:
         data = await gateway.chat_json(
             "judge",
-            build_judge_messages(topic.criteria, m.platform,
-                                 m.author_name or m.author_handle, m.title, m.text, issues),
+            build_judge_messages(topic.criteria, platform, author, title, text, issues),
             max_tokens=400)
-        post.relevance = max(0, min(100, int(data.get("relevance", 0))))
-        post.sentiment = data.get("sentiment") if data.get("sentiment") in ("neg", "neu", "pos") else "neu"
-        post.sentiment_score = max(-1.0, min(1.0, float(data.get("sentiment_score", 0))))
-        emo = data.get("emotion")
-        post.emotion = emo if emo in EMOTIONS else "neutral"
-        post.lang = post.lang or (data.get("lang") or "")[:12]
-        post.topics = [str(t)[:40] for t in (data.get("topics") or [])[:3]]
-        post.entities = [str(e)[:60] for e in (data.get("entities") or [])[:5]]
-        post.virality = _clamp_int(data.get("virality"))
-        post.risk = _clamp_int(data.get("risk"))
-        post.issue = (str(data.get("issue"))[:60] or None) if data.get("issue") else None
-        post.stance = data.get("stance") if data.get("stance") in ("support", "oppose", "neutral") else "neutral"
-        post.locations = [str(x)[:250] for x in (data.get("locations") or [])[:2]]
-        post.bot_suspect = bool(data.get("spam_or_bot", False))
-        post.enrichment_status = "done"
-        threshold = topic.threshold or settings.judge_threshold_default
-        if not data.get("relevant", True) or post.relevance < threshold:
-            post.is_hidden = True                     # stored + auditable, not shown
+        return "done", data
     except GatewayUnavailable:
-        post.enrichment_status = "pending"            # catch-up job re-runs it
+        return "pending", None
     except Exception:  # noqa: BLE001
-        log.warning("judge failed for %s", post.identity_key, exc_info=True)
+        log.warning("judge failed for %s", title[:60], exc_info=True)
+        return "failed", None
+
+
+async def _enrich_fetch(topic: Topic, post: Post, m: RawMention, issues,
+                        sem: asyncio.Semaphore, extract: bool = True) -> dict:
+    """All network work for one post (article body, judge, embedding), bounded by
+    `sem`. NO DB access — safe to run concurrently across posts."""
+    async with sem:
+        text = m.text or post.text or ""
+        if (extract and post.platform in ARTICLE_PLATFORMS and post.url
+                and not any(h in (post.domain or post.url) for h in ARTICLE_SKIP_HOSTS)):
+            body = await _extract_article(post.url)
+            if body and len(body) > len(text):
+                text = body[:ARTICLE_MAX_CHARS]
+        status, data = await _judge(
+            topic, post.platform, m.author_name or m.author_handle, post.title, text, issues)
+        vec = None
+        try:
+            vec = (await vectorize([f"{post.title} {text}"[:1000]]))[0]
+        except Exception:  # noqa: BLE001
+            vec = None
+    return {"text": text, "status": status, "data": data, "vec": vec}
+
+
+def _apply_judge(post: Post, data: dict, topic: Topic) -> None:
+    post.relevance = max(0, min(100, int(data.get("relevance", 0))))
+    post.sentiment = data.get("sentiment") if data.get("sentiment") in ("neg", "neu", "pos") else "neu"
+    post.sentiment_score = max(-1.0, min(1.0, float(data.get("sentiment_score", 0))))
+    emo = data.get("emotion")
+    post.emotion = emo if emo in EMOTIONS else "neutral"
+    post.lang = post.lang or (data.get("lang") or "")[:12]
+    post.topics = [str(t)[:40] for t in (data.get("topics") or [])[:3]]
+    post.entities = [str(e)[:60] for e in (data.get("entities") or [])[:5]]
+    post.virality = _clamp_int(data.get("virality"))
+    post.risk = _clamp_int(data.get("risk"))
+    post.issue = (str(data.get("issue"))[:60] or None) if data.get("issue") else None
+    post.stance = data.get("stance") if data.get("stance") in ("support", "oppose", "neutral") else "neutral"
+    post.locations = [str(x)[:250] for x in (data.get("locations") or [])[:2]]
+    post.bot_suspect = bool(data.get("spam_or_bot", False))
+    threshold = topic.threshold or settings.judge_threshold_default
+    if not data.get("relevant", True) or post.relevance < threshold:
+        post.is_hidden = True                         # stored + auditable, not shown
+
+
+async def _finalize(db: DbSession, topic: Topic, post: Post, res: dict,
+                    cpm_table: dict | None) -> None:
+    """Serial DB apply for one enriched post: judge fields, scoring, geo, cluster."""
+    status, data = res["status"], res["data"]
+    if status == "done" and data is not None:
+        _apply_judge(post, data, topic)
+        post.enrichment_status = "done"
+    elif status == "pending":
+        post.enrichment_status = "pending"            # catch-up job re-runs it
+    else:
         post.enrichment_status = "failed_llm"
 
     post.reach = estimate_reach(post.platform, post.engagement, post.author_followers)
@@ -217,17 +383,48 @@ async def _enrich(db: DbSession, topic: Topic, post: Post, m: RawMention,
             if not post.country:  # keep the deterministic source-country if already set
                 post.country, post.country_name = geo["country"], geo["country_name"]
 
-    if not post.is_hidden:
+    if not post.is_hidden and res.get("vec"):
         try:
-            vec = (await vectorize([f"{post.title} {post.text}"[:1000]]))[0]
-            post.cluster_id = assign_cluster(db, topic.id, post.platform, vec,
-                                             post.title or post.text[:120])
+            post.cluster_id = assign_cluster(db, topic.id, post.platform,
+                                             res["vec"], post.title or post.text[:120])
         except Exception:  # noqa: BLE001
             log.warning("clustering skipped", exc_info=True)
 
 
+async def enrich_batch(db: DbSession, topic: Topic,
+                       pairs: list[tuple[Post, RawMention]],
+                       cpm_table: dict | None, issues) -> int:
+    """Concurrently do the network-bound enrichment for a batch of new posts, then
+    apply the results to the DB serially. Overflow past the cap stays 'pending'."""
+    pairs = pairs[:ENRICH_INLINE_CAP]
+    extract = gateway.available("judge")   # skip wasted article fetches when AI is off
+    sem = asyncio.Semaphore(ENRICH_CONCURRENCY)
+    results = await asyncio.gather(
+        *[_enrich_fetch(topic, post, m, issues, sem, extract) for post, m in pairs],
+        return_exceptions=True)
+    docs, done = [], 0
+    for (post, _m), res in zip(pairs, results):
+        if isinstance(res, Exception):
+            post.enrichment_status = "failed_llm"
+            continue
+        await _finalize(db, topic, post, res, cpm_table)
+        if post.enrichment_status == "done":
+            done += 1
+        docs.append(meili.doc_from_post(post))
+        if len(docs) >= 20:
+            db.commit()
+            _index_safe(docs)
+            docs = []
+    db.commit()
+    _index_safe(docs)
+    return done
+
+
 async def catchup_enrichment(db: DbSession) -> int:
-    """Re-run judge for posts deferred while every provider was cooling."""
+    """Re-run enrichment for posts deferred while every provider was cooling.
+    Uses the same concurrent network + serial apply path as the live cycle."""
+    if not gateway.available("judge"):
+        return 0                                      # nothing to gain; don't burn network
     pending = (db.query(Post)
                .filter(Post.enrichment_status.in_(["pending", "failed_llm"]))
                .order_by(Post.id.desc()).limit(200).all())
@@ -235,24 +432,43 @@ async def catchup_enrichment(db: DbSession) -> int:
         return 0
     cpm_table = get_setting(db, "cpm")
     issues = get_setting(db, "issues").get("list") or None
-    done = 0
+
+    topics: dict[int, Topic | None] = {}
+    triples: list[tuple[Topic, Post, RawMention]] = []
     for post in pending:
-        topic = db.get(Topic, post.topic_id)
+        topic = topics.get(post.topic_id)
+        if post.topic_id not in topics:
+            topic = db.get(Topic, post.topic_id)
+            topics[post.topic_id] = topic
         if topic is None:
-            post.enrichment_status = "done"
+            post.enrichment_status = "done"           # orphaned post; stop retrying it
             continue
         m = RawMention(platform=post.platform, native_id=post.native_id,
                        text=post.text, title=post.title,
                        author_name=post.author_name, author_handle=post.author_handle)
+        triples.append((topic, post, m))
+
+    if not triples:
+        db.commit()
+        return 0
+
+    sem = asyncio.Semaphore(ENRICH_CONCURRENCY)
+    results = await asyncio.gather(
+        *[_enrich_fetch(t, p, m, issues, sem) for t, p, m in triples],
+        return_exceptions=True)
+
+    done = 0
+    for (topic, post, _m), res in zip(triples, results):
         before = post.enrichment_status
-        await _enrich(db, topic, post, m, cpm_table, issues)
+        if isinstance(res, Exception):
+            post.enrichment_status = "failed_llm"
+            continue
+        await _finalize(db, topic, post, res, cpm_table)
         if post.enrichment_status == "done" and before != "done":
             done += 1
             try:
                 meili.index_posts([meili.doc_from_post(post)])
             except Exception:  # noqa: BLE001
                 pass
-        elif post.enrichment_status == "pending":
-            break  # rotation still dry — stop burning the loop
     db.commit()
     return done

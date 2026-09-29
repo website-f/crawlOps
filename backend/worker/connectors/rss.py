@@ -9,13 +9,12 @@ import re
 from urllib.parse import urlparse
 
 import feedparser
-import httpx
 from dateutil import parser as dtparse
 
 from app.config import settings
 from app.services.boolean_query import CompiledQuery
 
-from .base import UA, Connector, RawMention, collect
+from .base import Connector, RawMention, collect, fetch_text
 
 _TAGS = re.compile(r"<[^>]+>")
 _IMG = re.compile(r'<img[^>]+src="([^"]+)"', re.I)
@@ -42,10 +41,7 @@ class Rss(Connector):
         return await collect(self._feed(u) for u in urls[:25])
 
     async def _feed(self, url: str) -> list[RawMention]:
-        async with httpx.AsyncClient(timeout=25, follow_redirects=True) as client:
-            r = await client.get(url, headers={"User-Agent": UA})
-        r.raise_for_status()
-        parsed = feedparser.parse(r.text)
+        parsed = feedparser.parse(await fetch_text(url))
         feed_title = getattr(parsed.feed, "title", "") if hasattr(parsed, "feed") else ""
         out = []
         for e in parsed.entries[:50]:

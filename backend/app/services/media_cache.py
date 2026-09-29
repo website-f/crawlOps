@@ -1,5 +1,6 @@
 """Media cache — download post images/videos into MinIO so cards keep rendering
 after the platform's signed CDN URLs expire. Video gets an ffmpeg poster frame."""
+import asyncio
 import hashlib
 import io
 import logging
@@ -58,13 +59,18 @@ async def _cache_one(m: dict) -> dict:
     if len(body) > MAX_BYTES:
         return m
     ctype = r.headers.get("content-type", "application/octet-stream").split(";")[0]
-    client().put_object(BUCKET, obj, io.BytesIO(body), len(body), content_type=ctype)
+    # put_object / ffmpeg are synchronous & blocking — run them off the event loop so a
+    # slow upload or transcode can't freeze concurrent fetches/enrichment.
+    await asyncio.to_thread(
+        client().put_object, BUCKET, obj, io.BytesIO(body), len(body), content_type=ctype)
     m["cache_key"] = obj
     if m.get("kind") == "video":
-        thumb = _poster_frame(body)
+        thumb = await asyncio.to_thread(_poster_frame, body)
         if thumb:
             tkey = f"{key}.poster.jpg"
-            client().put_object(BUCKET, tkey, io.BytesIO(thumb), len(thumb), content_type="image/jpeg")
+            await asyncio.to_thread(
+                client().put_object, BUCKET, tkey, io.BytesIO(thumb), len(thumb),
+                content_type="image/jpeg")
             m["thumb_key"] = tkey
     return m
 

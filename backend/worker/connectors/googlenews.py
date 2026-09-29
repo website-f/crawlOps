@@ -4,12 +4,11 @@ import re
 from urllib.parse import urlparse
 
 import feedparser
-import httpx
 from dateutil import parser as dtparse
 
 from app.services.boolean_query import CompiledQuery, to_boolean_string
 
-from .base import UA, Connector, RawMention
+from .base import Connector, RawMention, fetch_text
 
 _TAGS = re.compile(r"<[^>]+>")
 
@@ -44,12 +43,9 @@ class GoogleNews(Connector):
         return out
 
     async def _edition(self, query: str, hl: str, gl: str, ceid: str) -> list[RawMention]:
-        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
-            r = await client.get("https://news.google.com/rss/search",
-                                 params={"q": f"{query} when:7d", "hl": hl, "gl": gl, "ceid": ceid},
-                                 headers={"User-Agent": UA})
-        r.raise_for_status()
-        feed = feedparser.parse(r.text)
+        text = await fetch_text("https://news.google.com/rss/search",
+                                params={"q": f"{query} when:7d", "hl": hl, "gl": gl, "ceid": ceid})
+        feed = feedparser.parse(text)
         out = []
         for e in feed.entries[:50]:
             link = e.get("link", "")

@@ -1,8 +1,8 @@
 import {
-  IconAntenna, IconBell, IconChartArcs, IconCpu, IconFileText, IconHeartRateMonitor,
-  IconHelp, IconLayoutDashboard, IconLogout, IconMap2, IconMenu2, IconMoodSmile,
-  IconPlanet, IconPlug, IconScale, IconSettings, IconTable, IconTargetArrow,
-  IconUserOff, IconUsersGroup, IconUsers, IconX,
+  IconAntenna, IconBell, IconBolt, IconChartArcs, IconCpu, IconFileText,
+  IconHeartRateMonitor, IconHelp, IconLayoutDashboard, IconLogout, IconMap2,
+  IconMenu2, IconMoodSmile, IconPlanet, IconPlug, IconScale, IconSettings,
+  IconTable, IconTargetArrow, IconUserOff, IconUsersGroup, IconUsers, IconX,
 } from '@tabler/icons-react'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
@@ -21,6 +21,7 @@ const Galaxy = lazy(() => import('./pages/Galaxy'))
 const MapView = lazy(() => import('./pages/MapView'))
 const SettingsPage = lazy(() => import('./pages/Settings'))
 const Sources = lazy(() => import('./pages/Sources'))
+const SystemHealth = lazy(() => import('./pages/SystemHealth'))
 const Suppression = lazy(() => import('./pages/Suppression'))
 const Topics = lazy(() => import('./pages/Topics'))
 const Tutorial = lazy(() => import('./pages/Tutorial'))
@@ -60,6 +61,7 @@ const GROUPS: { label: string; items: { to: string; label: string; Icon: any }[]
     label: 'Configure',
     items: [
       { to: '/sources', label: 'Sources', Icon: IconPlug },
+      { to: '/system', label: 'Crawl Ops', Icon: IconBolt },
       { to: '/ai', label: 'AI Engine', Icon: IconCpu },
       { to: '/settings', label: 'Settings', Icon: IconSettings },
       { to: '/tutorial', label: 'Tutorial', Icon: IconHelp },
@@ -155,6 +157,7 @@ function Shell() {
           <Route path="/map" element={<MapView />} />
           <Route path="/alerts" element={<Alerts />} />
           <Route path="/sources" element={<Sources />} />
+          <Route path="/system" element={<SystemHealth />} />
           <Route path="/ai" element={<AIEngine />} />
           <Route path="/suppression" element={<Suppression />} />
           <Route path="/settings" element={<SettingsPage />} />

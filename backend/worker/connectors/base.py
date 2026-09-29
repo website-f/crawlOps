@@ -61,24 +61,112 @@ class Connector:
         raise NotImplementedError
 
 
-async def fetch_json(url: str, params: dict | None = None, headers: dict | None = None,
-                     timeout: float = 20, retries: tuple = (0,)) -> dict | list:
+# ---- rotating, rate-limited, retrying HTTP crawl layer ---------------------
+# Every connector fetches through request()/fetch_json()/fetch_text() so it gets:
+#   - proxy rotation from the health-scored pool (beats single-IP 429/403 blocks)
+#   - per-domain minimum interval (polite, avoids self-inflicted rate limits)
+#   - retry across proxies with backoff, reporting outcomes to the proxy scorer
+import time as _time
+from urllib.parse import urlparse
+
+# polite minimum seconds between hits to the same host (Redis-coordinated across workers)
+DOMAIN_MIN_INTERVAL = {
+    "api.gdeltproject.org": 5.0, "export.arxiv.org": 3.0, "efts.sec.gov": 1.0,
+    "en.wikipedia.org": 0.5, "api.stackexchange.com": 0.4, "api.github.com": 1.0,
+    "hn.algolia.com": 0.3, "www.reddit.com": 2.0, "clinicaltrials.gov": 0.5,
+    "news.google.com": 1.0,
+}
+_pool_cache: dict = {"at": 0.0, "pool": []}
+
+
+def _proxy_pool() -> list[dict]:
+    """Active proxies from Postgres, cached ~30s to avoid a query per request."""
+    now = _time.time()
+    if now - _pool_cache["at"] < 30:
+        return _pool_cache["pool"]
+    try:
+        from app.db import SessionLocal
+        from app.models import Proxy
+        with SessionLocal() as db:
+            pool = [{"id": p.id, "url": p.url, "tag": p.tag}
+                    for p in db.query(Proxy).filter(Proxy.active.is_(True)).all()]
+    except Exception:  # noqa: BLE001
+        pool = []
+    _pool_cache.update(at=now, pool=pool)
+    return pool
+
+
+async def _respect_rate(domain: str) -> None:
+    interval = DOMAIN_MIN_INTERVAL.get(domain, 0.15)
+    try:
+        from app.services.proxy_manager import proxy_manager
+        r = proxy_manager.r
+        key = f"ratelimit:{domain}"
+        last = float(r.get(key) or 0)
+        wait = interval - (_time.time() - last)
+        if wait > 0:
+            await asyncio.sleep(min(wait, interval))
+        r.set(key, _time.time(), ex=3600)
+    except Exception:  # noqa: BLE001
+        pass  # rate limiting is best-effort; never block a fetch on Redis
+
+
+async def request(url: str, params: dict | None = None, headers: dict | None = None,
+                  timeout: float = 25, attempts: int = 3,
+                  purpose: str = "tier2") -> httpx.Response:
+    """GET with proxy rotation + per-domain rate limiting + retry/backoff.
+    Reports each proxy's outcome to the health scorer. Falls back to direct."""
+    from app.services.proxy_manager import proxy_manager
+    domain = urlparse(url).netloc
+    pool = _proxy_pool()
     last: Exception | None = None
-    for delay in retries:
-        if delay:
-            await asyncio.sleep(delay)
+    for attempt in range(attempts):
+        await _respect_rate(domain)
+        proxy = None
         try:
-            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            proxy = proxy_manager.acquire(pool, purpose=purpose) if pool else None
+        except Exception:  # noqa: BLE001
+            proxy = None
+        client_kw = {"timeout": timeout, "follow_redirects": True}
+        if proxy:
+            client_kw["proxy"] = proxy["url"]
+        try:
+            async with httpx.AsyncClient(**client_kw) as client:
                 r = await client.get(url, params=params,
                                      headers={"User-Agent": UA, **(headers or {})})
-            if r.status_code == 429:
-                last = RuntimeError(f"429 from {url}")
+            if r.status_code in (429, 403, 451, 503) or r.status_code >= 500:
+                if proxy:
+                    proxy_manager.report(proxy["id"], "soft_block")
+                last = RuntimeError(f"{r.status_code} from {domain}")
+                await asyncio.sleep(min(8, 1.5 * (attempt + 1)))  # backoff
                 continue
-            r.raise_for_status()
-            return r.json()
+            if proxy:
+                proxy_manager.report(proxy["id"], "ok")
+            return r
         except Exception as e:  # noqa: BLE001
+            if proxy:
+                proxy_manager.report(proxy["id"], "net_error")
             last = e
-    raise last or RuntimeError("fetch failed")
+            await asyncio.sleep(min(5, 1.0 * (attempt + 1)))
+    raise last or RuntimeError(f"fetch failed: {url}")
+
+
+async def fetch_json(url: str, params: dict | None = None, headers: dict | None = None,
+                     timeout: float = 25, retries: tuple = (0,), purpose: str = "tier2"):
+    # `retries` kept for signature compat; attempt count is derived from it + a floor of 3
+    attempts = max(3, len(retries))
+    r = await request(url, params=params, headers=headers, timeout=timeout,
+                      attempts=attempts, purpose=purpose)
+    r.raise_for_status()
+    return r.json()
+
+
+async def fetch_text(url: str, params: dict | None = None, headers: dict | None = None,
+                     timeout: float = 25, attempts: int = 3, purpose: str = "tier2") -> str:
+    r = await request(url, params=params, headers=headers, timeout=timeout,
+                      attempts=attempts, purpose=purpose)
+    r.raise_for_status()
+    return r.text
 
 
 async def collect(coros) -> list[RawMention]:

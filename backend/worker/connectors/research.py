@@ -26,15 +26,12 @@ class ArXiv(Connector):
         return await collect(self._q(t) for t in to_api_terms(cq, 3))
 
     async def _q(self, term: str) -> list[RawMention]:
-        import httpx
-        from .base import UA
+        from .base import fetch_text
         sq = f'all:"{term}"' if " " in term else f"all:{term}"
-        async with httpx.AsyncClient(timeout=25) as c:
-            r = await c.get("http://export.arxiv.org/api/query",
-                            params={"search_query": sq, "start": 0, "max_results": 25,
-                                    "sortBy": "submittedDate", "sortOrder": "descending"},
-                            headers={"User-Agent": UA})
-        feed = feedparser.parse(r.text)
+        text = await fetch_text("http://export.arxiv.org/api/query",
+                                params={"search_query": sq, "start": 0, "max_results": 25,
+                                        "sortBy": "submittedDate", "sortOrder": "descending"})
+        feed = feedparser.parse(text)
         out = []
         for e in feed.entries[:25]:
             authors = ", ".join(a.get("name", "") for a in e.get("authors", [])[:3])

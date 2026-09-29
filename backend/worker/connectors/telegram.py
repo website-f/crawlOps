@@ -8,12 +8,11 @@ import html
 import re
 from datetime import datetime, timezone
 
-import httpx
 from dateutil import parser as dtparse
 
 from app.services.boolean_query import CompiledQuery
 
-from .base import UA, Connector, RawMention, collect
+from .base import Connector, RawMention, collect, fetch_text
 
 _MSG = re.compile(
     r'<div class="tgme_widget_message[^"]*"[^>]*data-post="([^"]+)".*?'
@@ -42,12 +41,12 @@ class Telegram(Connector):
         return await collect(self._channel(c.lstrip("@")) for c in self.channels[:15])
 
     async def _channel(self, channel: str) -> list[RawMention]:
-        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
-            r = await client.get(f"https://t.me/s/{channel}", headers={"User-Agent": UA})
-        if r.status_code != 200:
+        try:
+            text = await fetch_text(f"https://t.me/s/{channel}")
+        except Exception:  # noqa: BLE001
             return []
         out = []
-        for post_id, text_html, dt in _MSG.findall(r.text):
+        for post_id, text_html, dt in _MSG.findall(text):
             text = _TAGS.sub(" ", _BR.sub("\n", html.unescape(text_html or ""))).strip()
             if not text:
                 continue
