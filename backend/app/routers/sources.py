@@ -55,7 +55,7 @@ def list_sources(db: Session = Depends(get_db)):
                "last_error": (s.last_error or "")[:300],
                "needs_credentials": creds.needs_credentials(s.connector),
                "missing": creds.missing_required(s),
-               "configured": creds.needs_credentials(s.connector) and not creds.missing_required(s)}
+               "configured": creds.is_configured(s)}
         if s.connector in STEALTH_CONNECTORS:
             row["account"] = _account_state(s.platform, sessions)
         out.append(row)
@@ -99,7 +99,7 @@ def set_credentials(source_id: int, body: CredentialsIn, db: Session = Depends(g
     s.config = cfg
     creds.write_secrets(s, {k: v for k, v in body.values.items()
                             if spec.get(k, {}).get("type") == "secret"})
-    if not creds.missing_required(s):
+    if creds.is_configured(s):
         s.enabled = True          # connecting a source is the act of turning it on
         if s.status == "dormant":
             s.status, s.last_error = "idle", None

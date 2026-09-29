@@ -156,3 +156,15 @@ def status_fields(source) -> list[dict]:
 
 def missing_required(source) -> list[str]:
     return [f["label"] for f in status_fields(source) if f.get("required") and not f["set"]]
+
+
+def is_configured(source) -> bool:
+    """Connected enough to actually run. Not the same as 'no required field missing':
+    rss and telegram have only optional fields (either feeds OR routes will do), so
+    an untouched source would otherwise report itself as configured."""
+    fields = status_fields(source)
+    if not fields:
+        return False
+    if [f for f in fields if f.get("required") and not f["set"]]:
+        return False
+    return any(f["set"] for f in fields)
