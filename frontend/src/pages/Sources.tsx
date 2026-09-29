@@ -22,8 +22,7 @@ function ConnectDialog({ source, onDone }: { source: Source; onDone: () => void 
       setFields(r.fields)
       const v: Record<string, string> = {}
       r.fields.forEach((f) => {
-        if (f.type === 'list') v[f.key] = Array.isArray(f.value) ? f.value.join('
-') : ''
+        if (f.type === 'list') v[f.key] = Array.isArray(f.value) ? f.value.join('\n') : ''
         else if (f.type === 'text') v[f.key] = typeof f.value === 'string' ? f.value : ''
         else v[f.key] = ''                       // secrets always start blank
       })
