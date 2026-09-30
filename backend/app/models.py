@@ -274,3 +274,12 @@ class SavedView(Base):
     name: Mapped[str] = mapped_column(String(120))
     params: Mapped[dict] = mapped_column(JSON, default=dict)   # {q, platforms, sentiments, ...}
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Dashboard(Base):
+    """A user-built dashboard: an ordered list of widgets over the analytics endpoints."""
+    __tablename__ = "dashboards"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    widgets: Mapped[list] = mapped_column(JSON, default=list)  # [{id,type,title,topic_id,days}]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

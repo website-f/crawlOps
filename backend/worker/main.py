@@ -91,9 +91,25 @@ async def main() -> None:
                             log.info("backfilled %s embeddings", b)
                 last_catchup = time.monotonic()
             await maybe_nightly(r)
+            await maybe_digest(r)
         except Exception:  # noqa: BLE001
             log.exception("tick failed")
         await asyncio.sleep(TICK_SECONDS)
+
+
+async def maybe_digest(r: redis.Redis) -> None:
+    """Send the scheduled digest at most once per UTC day, at the configured hour."""
+    from .digest import is_due, send_digest
+    now = datetime.now(timezone.utc)
+    day = now.strftime("%Y-%m-%d")
+    if r.get("digest:done") == day:
+        return
+    with SessionLocal() as db:
+        if not is_due(db, now):
+            return
+        if r.set("digest:done", day, nx=True):        # claim the send
+            res = await send_digest(db)
+            log.info("digest sent: %s", res)
 
 
 async def maybe_nightly(r: redis.Redis) -> None:

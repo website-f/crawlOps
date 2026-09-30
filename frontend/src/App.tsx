@@ -17,6 +17,7 @@ const Authors = lazy(() => import('./pages/Authors'))
 const Analytics = lazy(() => import('./pages/Analytics'))
 const Audience = lazy(() => import('./pages/Audience'))
 const Competitors = lazy(() => import('./pages/Competitors'))
+const Dashboards = lazy(() => import('./pages/Dashboards'))
 const DataExplorer = lazy(() => import('./pages/DataExplorer'))
 const Feed = lazy(() => import('./pages/Feed'))
 const Galaxy = lazy(() => import('./pages/Galaxy'))
@@ -43,6 +44,7 @@ const GROUPS: { label: string; items: { to: string; label: string; Icon: any }[]
     label: 'Analyze',
     items: [
       { to: '/analytics', label: 'Overview', Icon: IconLayoutDashboard },
+      { to: '/dashboards', label: 'Dashboards', Icon: IconLayoutDashboard },
       { to: '/analytics/health', label: 'Brand Health', Icon: IconHeartRateMonitor },
       { to: '/analytics/sentiment', label: 'Sentiment & Emotions', Icon: IconMoodSmile },
       { to: '/analytics/trends', label: 'Trends', Icon: IconChartArcs },
@@ -157,6 +159,7 @@ function Shell() {
           <Route path="/analytics/trends" element={<Analytics view="trends" />} />
           <Route path="/analytics/influencers" element={<Analytics view="influencers" />} />
           <Route path="/competitors" element={<Competitors />} />
+          <Route path="/dashboards" element={<Dashboards />} />
           <Route path="/audience" element={<Audience />} />
           <Route path="/authors" element={<Authors />} />
           <Route path="/explore" element={<DataExplorer />} />

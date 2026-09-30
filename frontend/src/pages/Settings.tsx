@@ -7,6 +7,7 @@ interface AllSettings {
   notifiers: { webhook_url: string; telegram_bot_token: string; telegram_chat_id: string }
   pipeline: { default_threshold: number; retention_days: number }
   issues: { list: string[] }
+  digest: { enabled: boolean; frequency: string; hour: number; topic_id: number | null; include_brief: boolean }
 }
 
 interface AppUser { id: number; username: string; role: string }
@@ -19,12 +20,21 @@ export default function Settings() {
   const [nu, setNu] = useState({ username: '', password: '', role: 'analyst' })
   const [sc, setSc] = useState<any>(null)
   const [recomputing, setRecomputing] = useState('')
+  const [topicsList, setTopicsList] = useState<{ id: number; name: string }[]>([])
+  const [digestResult, setDigestResult] = useState('')
 
   useEffect(() => {
     get<AllSettings>('/settings').then(setS)
     get('/scoring').then(setSc).catch(() => {})
+    get('/topics').then(setTopicsList).catch(() => {})
     get<AppUser[]>('/auth/users').then(setUsers).catch(() => setUsers(null)) // 403 for non-admins
   }, [])
+
+  const sendDigestNow = async () => {
+    setDigestResult('sending')
+    const r = await post<{ ok: boolean }>('/settings/digest/send')
+    setDigestResult(r.ok ? 'Sent — check your channel.' : 'No channel delivered (configure alert channels first).')
+  }
 
   const saveScoring = async () => {
     if (!sc) return
@@ -97,6 +107,41 @@ export default function Settings() {
           </button>
           {testResult && testResult !== 'testing' && <span className="text-sm text-inksec">{testResult}</span>}
           {testResult === 'testing' && <span className="text-sm text-muted">testing</span>}
+        </div>
+      </section>
+
+      <section className="bg-white border border-grid rounded-2xl p-5">
+        <div className="flex items-center mb-1">
+          <h3 className="font-semibold">Scheduled digest</h3>
+          <label className="ml-3 inline-flex items-center gap-1.5 text-sm text-inksec">
+            <input type="checkbox" checked={s.digest?.enabled || false}
+              onChange={(e) => setS({ ...s, digest: { ...s.digest, enabled: e.target.checked } })} /> enabled
+          </label>
+          <button onClick={() => save('digest')} className="ml-auto inline-flex items-center gap-1.5 text-sm text-[#2a78d6]">
+            <IconDeviceFloppy size={15} stroke={2} />{saved === 'digest' ? 'Saved' : 'Save'}
+          </button>
+        </div>
+        <p className="text-sm text-inksec mb-3">A recurring summary (volume, sentiment, trending, top voices, highest-impact mentions, and the AI brief) sent to your alert channels above.</p>
+        <div className="flex flex-wrap gap-4 items-end text-sm">
+          <label>Frequency
+            <select value={s.digest?.frequency || 'daily'} onChange={(e) => setS({ ...s, digest: { ...s.digest, frequency: e.target.value } })}
+              className="border border-grid rounded-lg px-2 py-1 ml-2"><option value="daily">Daily</option><option value="weekly">Weekly (Mon)</option></select>
+          </label>
+          <label>Hour (UTC)
+            <input type="number" min={0} max={23} value={s.digest?.hour ?? 8}
+              onChange={(e) => setS({ ...s, digest: { ...s.digest, hour: Number(e.target.value) } })}
+              className="border border-grid rounded-lg px-2 py-1 w-16 ml-2" />
+          </label>
+          <label>Topic
+            <select value={s.digest?.topic_id ?? ''} onChange={(e) => setS({ ...s, digest: { ...s.digest, topic_id: e.target.value ? Number(e.target.value) : null } })}
+              className="border border-grid rounded-lg px-2 py-1 ml-2"><option value="">All topics</option>{topicsList.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
+          </label>
+          <label className="inline-flex items-center gap-1.5"><input type="checkbox" checked={s.digest?.include_brief ?? true}
+            onChange={(e) => setS({ ...s, digest: { ...s.digest, include_brief: e.target.checked } })} /> include AI brief</label>
+          <button onClick={sendDigestNow} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-ink text-white text-sm active:scale-[0.98]">
+            <IconSend size={14} stroke={2} />Send now
+          </button>
+          {digestResult && <span className="text-sm text-inksec">{digestResult === 'sending' ? 'sending…' : digestResult}</span>}
         </div>
       </section>
 

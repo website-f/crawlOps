@@ -19,6 +19,14 @@ DEFAULTS: dict[str, dict] = {
         "default_threshold": 55,
         "retention_days": 90,
     },
+    # scheduled digest delivery (to the alert channels)
+    "digest": {
+        "enabled": False,
+        "frequency": "daily",   # daily | weekly (Mondays)
+        "hour": 8,              # UTC hour to send
+        "topic_id": None,      # None = all topics
+        "include_brief": True,
+    },
     "issues": {
         "list": ["economy", "cost of living", "jobs", "healthcare", "education",
                  "security", "corruption", "environment", "infrastructure", "housing"],

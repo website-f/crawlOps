@@ -32,3 +32,11 @@ def read_one(key: str, db: Session = Depends(get_db)):
 def test_notifiers(db: Session = Depends(get_db)):
     results = test_channels(db)
     return {"ok": any(results.values()) if results else False, "results": results}
+
+
+@router.post("/digest/send")
+async def send_digest_now(db: Session = Depends(get_db)):
+    """Build + deliver the digest immediately (preview/test the scheduled report)."""
+    from ..services.digest import send_digest
+    results = await send_digest(db)
+    return {"ok": any(results.values()) if results else False, "results": results}
