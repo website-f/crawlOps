@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     admin_user: str = "admin"
     admin_password: str = "crawlops-change-me"
     secret_key: str = "crawlops-secret-change-me"  # encrypts provider API keys at rest
+    # dedicated JWT signing secret — MUST be set to a random 32+ char value in prod;
+    # auth fails closed if left empty/default (see services/auth.py).
+    jwt_secret: str = ""
+    # comma-separated allowlist of browser origins for CORS; "*" = any (dev default).
+    # The browser extension has host_permissions so it bypasses CORS regardless.
+    cors_origins: str = "*"
 
     allow_direct_stealth: bool = False
     judge_threshold_default: int = 55

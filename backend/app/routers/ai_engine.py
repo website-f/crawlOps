@@ -87,12 +87,17 @@ class TestIn(BaseModel):
 @router.post("/providers/test")
 async def test_provider(body: TestIn, db: Session = Depends(get_db)):
     key = body.api_key
+    base_url = body.base_url
     if not key and body.provider_id:
+        # reusing a STORED key -> pin the destination to that provider's own endpoint.
+        # Never send a decrypted stored key to a caller-supplied base_url (key exfil).
         p = db.get(AIProvider, body.provider_id)
-        key = decrypt(p.api_key_enc) if p else ""
+        if not p:
+            return {"ok": False, "error": "unknown provider"}
+        key, base_url = decrypt(p.api_key_enc), p.base_url
     if not key:
         return {"ok": False, "error": "no API key"}
-    return await gateway.test_provider(body.base_url, key, body.model)
+    return await gateway.test_provider(base_url, key, body.model)
 
 
 class ModelsIn(BaseModel):
@@ -104,12 +109,15 @@ class ModelsIn(BaseModel):
 @router.post("/providers/models")
 async def fetch_models(body: ModelsIn, db: Session = Depends(get_db)):
     key = body.api_key
+    base_url = body.base_url
     if not key and body.provider_id:
         p = db.get(AIProvider, body.provider_id)
-        key = decrypt(p.api_key_enc) if p else ""
+        if not p:
+            return {"models": [], "error": "unknown provider"}
+        key, base_url = decrypt(p.api_key_enc), p.base_url  # pin endpoint to stored key
     if not key:
         return {"models": [], "error": "no API key"}
-    return {"models": await gateway.list_models(body.base_url, key)}
+    return {"models": await gateway.list_models(base_url, key)}
 
 
 @router.get("/usage")

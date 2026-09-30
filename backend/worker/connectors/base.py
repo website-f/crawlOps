@@ -67,7 +67,9 @@ class Connector:
 #   - per-domain minimum interval (polite, avoids self-inflicted rate limits)
 #   - retry across proxies with backoff, reporting outcomes to the proxy scorer
 import time as _time
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
+
+from app.services.ssrf import BlockedURL, guard_url
 
 # polite minimum seconds between hits to the same host (Redis-coordinated across workers)
 # A 429 pushes the whole domain's next-allowed time out by this much per attempt.
@@ -154,23 +156,39 @@ except Exception:  # noqa: BLE001
 IMPERSONATE = "chrome"
 
 
+_MAX_REDIRECTS = 4
+
+
 async def _http_get(url: str, params, headers, timeout: float, proxy: str | None):
     """One GET, browser-fingerprinted via curl_cffi when available. Returns a response
-    exposing .status_code/.text/.json()/.headers/.raise_for_status() either way."""
-    if _HAVE_CURL:
-        proxies = {"http": proxy, "https": proxy} if proxy else None
-        async with _CurlSession() as s:
-            # impersonate sets a consistent Chrome UA + header order; only override the
-            # UA when a connector explicitly needs its own (e.g. SEC's contact string).
-            return await s.get(url, params=params, headers=headers or None,
-                               timeout=timeout, impersonate=IMPERSONATE,
-                               proxies=proxies, allow_redirects=True)
-    client_kw = {"timeout": timeout, "follow_redirects": True}
-    if proxy:
-        client_kw["proxy"] = proxy
-    async with httpx.AsyncClient(**client_kw) as client:
-        return await client.get(url, params=params,
-                                headers={"User-Agent": UA, **(headers or {})})
+    exposing .status_code/.text/.json()/.headers/.raise_for_status() either way.
+    Redirects are followed manually so the SSRF guard re-checks every hop (an external
+    URL that 302s to 169.254.169.254 or an internal service is blocked)."""
+    hops = 0
+    while True:
+        guard_url(url)   # raises BlockedURL for internal/loopback/link-local targets
+        if _HAVE_CURL:
+            proxies = {"http": proxy, "https": proxy} if proxy else None
+            async with _CurlSession() as s:
+                # impersonate sets a consistent Chrome UA + header order; only override the
+                # UA when a connector explicitly needs its own (e.g. SEC's contact string).
+                r = await s.get(url, params=params, headers=headers or None,
+                                timeout=timeout, impersonate=IMPERSONATE,
+                                proxies=proxies, allow_redirects=False)
+        else:
+            client_kw = {"timeout": timeout, "follow_redirects": False}
+            if proxy:
+                client_kw["proxy"] = proxy
+            async with httpx.AsyncClient(**client_kw) as client:
+                r = await client.get(url, params=params,
+                                     headers={"User-Agent": UA, **(headers or {})})
+        loc = r.headers.get("location") if getattr(r, "headers", None) else None
+        if getattr(r, "status_code", 0) in (301, 302, 303, 307, 308) and loc and hops < _MAX_REDIRECTS:
+            url = urljoin(url, loc)   # re-validated at the top of the next loop
+            params = None             # the query is carried in the redirect target
+            hops += 1
+            continue
+        return r
 
 
 # Cloudflare "Just a moment…" JS challenge — curl_cffi's TLS trick can't solve it, but
@@ -264,6 +282,8 @@ async def request(url: str, params: dict | None = None, headers: dict | None = N
             if proxy:
                 proxy_manager.report(proxy["id"], "ok")
             return r
+        except BlockedURL:
+            raise  # internal/disallowed target — don't retry or rotate proxies
         except Exception as e:  # noqa: BLE001
             if proxy:
                 proxy_manager.report(proxy["id"], "net_error")

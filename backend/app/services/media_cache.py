@@ -15,11 +15,13 @@ import logging
 import subprocess
 import tempfile
 from pathlib import Path
+from urllib.parse import urljoin
 
 import httpx
 from minio import Minio
 
 from ..config import settings
+from .ssrf import BlockedURL, guard_url
 
 log = logging.getLogger("media")
 BUCKET = "media"
@@ -79,10 +81,20 @@ async def _cache_one(m: dict) -> dict:
     url = m.get("src_url", "")
     if not url:
         return m
+    try:
+        guard_url(url)   # block internal/loopback/link-local media URLs (SSRF)
+    except BlockedURL:
+        log.warning("media cache blocked non-public url: %s", url[:120])
+        return m
     is_video = m.get("kind") == "video"
     key = hashlib.sha1(url.encode()).hexdigest()
-    async with httpx.AsyncClient(timeout=45, follow_redirects=True) as http:
+    async with httpx.AsyncClient(timeout=45, follow_redirects=False) as http:
         r = await http.get(url, headers={"User-Agent": "Mozilla/5.0 (compatible; CrawlOps/1.0)"})
+        # one manual redirect hop, re-checked, so a 302 can't jump to an internal host
+        if r.status_code in (301, 302, 303, 307, 308) and r.headers.get("location"):
+            nxt = urljoin(url, r.headers["location"])
+            guard_url(nxt)
+            r = await http.get(nxt, headers={"User-Agent": "Mozilla/5.0 (compatible; CrawlOps/1.0)"})
         r.raise_for_status()
         body = r.content
     if len(body) > MAX_BYTES:

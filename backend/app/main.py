@@ -5,6 +5,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .bootstrap import init_schema_and_seed
+from .config import settings as app_settings
 from .routers import (ai_engine, alerts, analytics, authors, auth, benchmark,
                       dashboards, explore, media, posts, reports, scoring, search,
                       settings, sources, suppression, system, topics, workflow)
@@ -26,9 +27,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="CrawlOps", lifespan=lifespan)
 
-# the browser extension calls the API cross-origin; auth is bearer-token so this is safe
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"],
-                   allow_headers=["*"])
+# CORS_ORIGINS allowlists browser origins (comma-separated); "*" = any (dev default).
+# Tokens are bearer (not cookies) and the extension bypasses CORS via host_permissions,
+# so restricting this to the real frontend origin in prod loses nothing.
+_cors = [o.strip() for o in app_settings.cors_origins.split(",") if o.strip()] or ["*"]
+app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"],
+                   allow_headers=["*"], allow_credentials=False)
 
 # public — no auth
 app.include_router(auth.router)

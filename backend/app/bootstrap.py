@@ -209,9 +209,18 @@ def _seed_providers(db) -> None:
 
 
 def _seed_admin(db) -> None:
+    import logging
+
     from .config import settings
     from .models import User
     from .services.auth import hash_password
-    if db.query(User).count() == 0:
-        db.add(User(username=settings.admin_user,
-                    password_hash=hash_password(settings.admin_password), role="admin"))
+    if db.query(User).count() != 0:
+        return
+    # refuse to seed a guessable default admin — force a real password to be set
+    if not settings.admin_password or settings.admin_password in ("", "crawlops-change-me", "change-me"):
+        logging.getLogger("bootstrap").warning(
+            "No admin seeded: ADMIN_PASSWORD is unset or the shipped default. "
+            "Set a strong ADMIN_PASSWORD in the environment and restart to seed the admin.")
+        return
+    db.add(User(username=settings.admin_user,
+                password_hash=hash_password(settings.admin_password), role="admin"))
