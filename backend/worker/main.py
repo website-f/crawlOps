@@ -99,7 +99,7 @@ async def main() -> None:
 
 async def maybe_digest(r: redis.Redis) -> None:
     """Send the scheduled digest at most once per UTC day, at the configured hour."""
-    from .digest import is_due, send_digest
+    from app.services.digest import is_due, send_digest
     now = datetime.now(timezone.utc)
     day = now.strftime("%Y-%m-%d")
     if r.get("digest:done") == day:
