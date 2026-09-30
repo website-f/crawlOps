@@ -44,6 +44,10 @@ export default {
           from: { transform: 'translateX(-100%)' },
           to: { transform: 'translateX(0)' },
         },
+        canvasin: {
+          from: { transform: 'translateX(100%)' },
+          to: { transform: 'translateX(0)' },
+        },
         shimmer: {
           '100%': { transform: 'translateX(100%)' },
         },

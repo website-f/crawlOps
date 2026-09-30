@@ -1,7 +1,11 @@
-import { IconCopy, IconDeviceFloppy, IconPuzzle, IconSend, IconTrash, IconUserPlus } from '@tabler/icons-react'
+import { IconCopy, IconDeviceFloppy, IconDownload, IconPuzzle, IconSend, IconTrash, IconUserPlus, IconX } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
+import { MultiSelect, TagInput } from '../components/ui/controls'
 import { useDialog } from '../components/ui/overlays'
-import { del, get, getToken, post, put } from '../lib/api'
+import { del, download, get, getToken, post, put } from '../lib/api'
+import { BRAND, FEED_TABS } from '../lib/platform'
+
+const PLATFORM_OPTS = FEED_TABS.filter((t) => t !== 'all').map((p) => ({ value: p, label: BRAND[p]?.label || p, color: BRAND[p]?.color }))
 
 interface AllSettings {
   cpm: Record<string, number>
@@ -77,7 +81,7 @@ export default function Settings() {
         <div className="flex items-center mb-1">
           <h3 className="font-semibold">Alert channels</h3>
           <button onClick={() => save('notifiers')}
-            className="ml-auto inline-flex items-center gap-1.5 text-sm text-[#2a78d6]">
+            className="ml-auto inline-flex items-center gap-1.5 text-sm text-accent hover:text-accent-ink transition">
             <IconDeviceFloppy size={15} stroke={2} />{saved === 'notifiers' ? 'Saved' : 'Save'}
           </button>
         </div>
@@ -119,7 +123,7 @@ export default function Settings() {
             <input type="checkbox" checked={s.digest?.enabled || false}
               onChange={(e) => setS({ ...s, digest: { ...s.digest, enabled: e.target.checked } })} /> enabled
           </label>
-          <button onClick={() => save('digest')} className="ml-auto inline-flex items-center gap-1.5 text-sm text-[#2a78d6]">
+          <button onClick={() => save('digest')} className="ml-auto inline-flex items-center gap-1.5 text-sm text-accent hover:text-accent-ink transition">
             <IconDeviceFloppy size={15} stroke={2} />{saved === 'digest' ? 'Saved' : 'Save'}
           </button>
         </div>
@@ -151,7 +155,7 @@ export default function Settings() {
         <div className="flex items-center mb-1">
           <h3 className="font-semibold">Pipeline</h3>
           <button onClick={() => save('pipeline')}
-            className="ml-auto inline-flex items-center gap-1.5 text-sm text-[#2a78d6]">
+            className="ml-auto inline-flex items-center gap-1.5 text-sm text-accent hover:text-accent-ink transition">
             <IconDeviceFloppy size={15} stroke={2} />{saved === 'pipeline' ? 'Saved' : 'Save'}
           </button>
         </div>
@@ -173,33 +177,42 @@ export default function Settings() {
         <div className="flex items-center mb-1">
           <h3 className="font-semibold">Issue list (Audience &amp; Issues)</h3>
           <button onClick={() => save('issues')}
-            className="ml-auto inline-flex items-center gap-1.5 text-sm text-[#2a78d6]">
+            className="ml-auto inline-flex items-center gap-1.5 text-sm text-accent hover:text-accent-ink transition">
             <IconDeviceFloppy size={15} stroke={2} />{saved === 'issues' ? 'Saved' : 'Save'}
           </button>
         </div>
-        <p className="text-sm text-inksec mb-2">The AI judge classifies each post into the closest of these issues (or "other"). One per line.</p>
-        <textarea rows={6} value={(s.issues?.list || []).join('\n')}
-          onChange={(e) => setS({ ...s, issues: { list: e.target.value.split('\n').map((x) => x.trim()).filter(Boolean) } })}
-          className="w-full border border-grid rounded-lg px-3 py-2 text-sm font-mono text-[13px]" />
+        <p className="text-sm text-inksec mb-2">The AI judge classifies each post into the closest of these issues (or "other"). Type an issue and press Enter.</p>
+        <TagInput value={s.issues?.list || []} onChange={(list) => setS({ ...s, issues: { list } })}
+          placeholder="Add an issue…"
+          suggestions={['economy', 'cost of living', 'jobs', 'healthcare', 'education', 'security', 'corruption', 'environment', 'infrastructure', 'housing']} />
       </section>
 
       <section className="bg-white border border-grid rounded-2xl p-5">
         <div className="flex items-center mb-1">
           <h3 className="font-semibold">CPM table (RM per 1000 impressions)</h3>
           <button onClick={() => save('cpm')}
-            className="ml-auto inline-flex items-center gap-1.5 text-sm text-[#2a78d6]">
+            className="ml-auto inline-flex items-center gap-1.5 text-sm text-accent hover:text-accent-ink transition">
             <IconDeviceFloppy size={15} stroke={2} />{saved === 'cpm' ? 'Saved' : 'Save'}
           </button>
         </div>
-        <p className="text-sm text-inksec mb-3">Drives the earned media value estimate. Adjust to your market rates.</p>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <p className="text-sm text-inksec mb-3">Drives the earned media value estimate. Adjust to your market rates, and add or remove platforms as needed.</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {Object.entries(s.cpm).map(([k, v]) => (
-            <label key={k} className="text-sm capitalize">{k}
+            <div key={k} className="flex items-center gap-1.5 border border-grid rounded-xl px-2.5 py-1.5 bg-plane/40">
+              {BRAND[k]?.color && <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: BRAND[k].color }} />}
+              <span className="text-[13px] capitalize truncate flex-1">{BRAND[k]?.label || k}</span>
               <input type="number" step="0.5" value={v}
                 onChange={(e) => setS({ ...s, cpm: { ...s.cpm, [k]: Number(e.target.value) } })}
-                className="w-full border border-grid rounded-lg px-2 py-1 mt-0.5 tabular-nums" />
-            </label>
+                className="w-16 border border-grid rounded-lg px-2 py-1 tabular-nums text-sm text-right focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent" />
+              <button onClick={() => { const { [k]: _drop, ...rest } = s.cpm; setS({ ...s, cpm: rest }) }}
+                className="text-muted hover:text-danger shrink-0" title="remove"><IconX size={13} stroke={2} /></button>
+            </div>
           ))}
+        </div>
+        <div className="mt-3 max-w-xs">
+          <div className="text-[11px] text-muted mb-1">Add a platform</div>
+          <MultiSelect options={PLATFORM_OPTS.filter((o) => !(o.value in s.cpm))} value={[]} placeholder="Pick platform…"
+            onChange={(vals) => { const add: Record<string, number> = {}; vals.forEach((v) => { add[v] = 10 }); setS({ ...s, cpm: { ...s.cpm, ...add } }) }} />
         </div>
       </section>
 
@@ -210,7 +223,7 @@ export default function Settings() {
             <label className="ml-3 inline-flex items-center gap-1.5 text-sm text-inksec">
               <input type="checkbox" checked={sc.enabled} onChange={(e) => setSc({ ...sc, enabled: e.target.checked })} /> enabled
             </label>
-            <button onClick={saveScoring} className="ml-auto inline-flex items-center gap-1.5 text-sm text-[#2a78d6]">
+            <button onClick={saveScoring} className="ml-auto inline-flex items-center gap-1.5 text-sm text-accent hover:text-accent-ink transition">
               <IconDeviceFloppy size={15} stroke={2} />{saved === 'scoring' ? 'Saved' : 'Save'}
             </button>
           </div>
@@ -232,21 +245,29 @@ export default function Settings() {
               </label>
             ))}
           </div>
-          <div className="grid sm:grid-cols-2 gap-3 mt-3 text-sm">
-            <label>Source priority (platform:weight, one per line)
-              <textarea rows={4} value={Object.entries(sc.platform_priority || {}).map(([k, v]) => `${k}:${v}`).join('\n')}
-                onChange={(e) => {
-                  const obj: any = {}
-                  e.target.value.split('\n').forEach((ln) => { const [k, v] = ln.split(':'); if (k?.trim() && v) obj[k.trim()] = Number(v) })
-                  setSc({ ...sc, platform_priority: obj })
-                }}
-                placeholder="news:1.5&#10;x:1.2" className="w-full border border-grid rounded-lg px-3 py-2 mt-0.5 font-mono text-[13px]" />
-            </label>
-            <label>Priority keywords (spokespeople, product names — one per line)
-              <textarea rows={4} value={(sc.keyword_terms || []).join('\n')}
-                onChange={(e) => setSc({ ...sc, keyword_terms: e.target.value.split('\n').map((x) => x.trim()).filter(Boolean) })}
-                placeholder="CEO name&#10;recall" className="w-full border border-grid rounded-lg px-3 py-2 mt-0.5 font-mono text-[13px]" />
-            </label>
+          <div className="grid sm:grid-cols-2 gap-4 mt-3 text-sm">
+            <div>
+              <div className="mb-1">Source priority <span className="text-muted font-normal">— boost specific platforms</span></div>
+              <MultiSelect options={PLATFORM_OPTS} value={Object.keys(sc.platform_priority || {})} placeholder="Pick platforms to weight…"
+                onChange={(keys) => { const next: any = {}; keys.forEach((k) => { next[k] = sc.platform_priority?.[k] ?? 1.5 }); setSc({ ...sc, platform_priority: next }) }} />
+              <div className="space-y-1.5 mt-2">
+                {Object.entries(sc.platform_priority || {}).map(([k, v]) => (
+                  <div key={k} className="flex items-center gap-2 text-[13px]">
+                    {BRAND[k]?.color && <span className="w-2.5 h-2.5 rounded-full" style={{ background: BRAND[k].color }} />}
+                    <span className="capitalize flex-1">{BRAND[k]?.label || k}</span>
+                    <span className="text-muted text-[11px]">×</span>
+                    <input type="number" step="0.1" value={v as number}
+                      onChange={(e) => setSc({ ...sc, platform_priority: { ...sc.platform_priority, [k]: Number(e.target.value) } })}
+                      className="w-16 border border-grid rounded-lg px-2 py-1 tabular-nums text-right focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent" />
+                  </div>
+                ))}
+                {Object.keys(sc.platform_priority || {}).length === 0 && <div className="text-muted text-[12px]">No boosts — every platform weighted 1.0.</div>}
+              </div>
+            </div>
+            <div>
+              <div className="mb-1">Priority keywords <span className="text-muted font-normal">— spokespeople, product names</span></div>
+              <TagInput value={sc.keyword_terms || []} onChange={(keyword_terms) => setSc({ ...sc, keyword_terms })} placeholder="Add a keyword…" />
+            </div>
           </div>
           <div className="flex items-center gap-3 mt-3">
             <button onClick={recompute} disabled={recomputing === 'running'}
@@ -261,17 +282,36 @@ export default function Settings() {
 
       <section className="bg-white border border-grid rounded-2xl p-5">
         <h3 className="font-semibold mb-1 inline-flex items-center gap-1.5"><IconPuzzle size={16} stroke={2} />Browser extension</h3>
-        <p className="text-sm text-inksec mb-3">
-          Install <code>browser-extension/</code> (chrome://extensions → Developer mode → Load unpacked),
-          then paste this token + your CrawlOps URL into it. Log into a platform in your browser and click
-          the extension to connect that account. No cookie copying.
+        <p className="text-sm text-inksec mb-4">
+          The one-click way to connect Facebook / Instagram / TikTok / X / Threads: log in normally in your own
+          browser, then push that session to CrawlOps. It captures the secure cookies a copy-paste can't.
         </p>
-        <label className="block text-sm">API token for the extension
+
+        <div className="grid sm:grid-cols-[auto_1fr] gap-x-4 gap-y-3 mb-4">
+          {[
+            ['1', <>Download the extension and unzip it somewhere permanent.</>],
+            ['2', <>Open <code className="text-[12px] px-1 py-0.5 rounded bg-plane border border-grid">chrome://extensions</code>, turn on <b>Developer mode</b>, click <b>Load unpacked</b>, and pick the unzipped folder.</>],
+            ['3', <>Open the extension's Settings, paste your CrawlOps URL and the API token below.</>],
+            ['4', <>Log into a platform, then click the extension → <b>Send session to CrawlOps</b>.</>],
+          ].map(([n, txt]) => (
+            <div key={n as string} className="contents">
+              <span className="w-6 h-6 rounded-full bg-accent/10 text-accent-ink grid place-items-center text-[12px] font-semibold shrink-0">{n as string}</span>
+              <span className="text-[13px] text-inksec self-center leading-snug">{txt as React.ReactNode}</span>
+            </div>
+          ))}
+        </div>
+
+        <button onClick={() => download('/sources/extension.zip', 'crawlops-connector.zip')}
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-accent text-white text-sm font-medium hover:brightness-110 active:scale-[0.99] transition">
+          <IconDownload size={16} stroke={2} />Download extension (.zip)
+        </button>
+
+        <label className="block text-sm mt-4">API token for the extension
           <div className="flex gap-2 mt-1">
             <input readOnly value={getToken() || ''}
               className="flex-1 border border-grid rounded-lg px-3 py-2 font-mono text-[12px] bg-plane" />
-            <button onClick={() => navigator.clipboard.writeText(getToken() || '')}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-ink text-white text-sm active:scale-[0.98]">
+            <button onClick={() => { navigator.clipboard.writeText(getToken() || ''); dialog.toast('Token copied', 'success') }}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-ink text-white text-sm active:scale-[0.98] hover:brightness-110 transition">
               <IconCopy size={14} stroke={2} />Copy
             </button>
           </div>

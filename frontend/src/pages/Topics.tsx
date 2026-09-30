@@ -1,8 +1,11 @@
 import { IconPencil, IconPlayerPlay, IconSparkles, IconTrash } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
+import { MultiSelect } from '../components/ui/controls'
 import { useDialog } from '../components/ui/overlays'
 import { del, get, post, put } from '../lib/api'
-import { FEED_TABS } from '../lib/platform'
+import { BRAND, FEED_TABS } from '../lib/platform'
+
+const PLATFORM_OPTS = FEED_TABS.filter((t) => t !== 'all').map((p) => ({ value: p, label: BRAND[p]?.label || p, color: BRAND[p]?.color }))
 
 interface Topic {
   id: number; name: string; query: string; criteria: string; threshold: number
@@ -44,17 +47,22 @@ export default function Topics() {
   }
 
   return (
-    <div className="grid lg:grid-cols-2 gap-6">
-      <div className="bg-white border border-grid rounded-2xl p-5">
-        <h2 className="font-semibold text-lg mb-3">{editing ? `Edit topic #${editing}` : 'New topic'}</h2>
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-lg font-bold tracking-tight">Topics</h1>
+        <p className="text-[13px] text-inksec">Define what to listen for. Each topic crawls on its own schedule — pause any with its Auto-run toggle.</p>
+      </div>
+      <div className="grid lg:grid-cols-2 gap-6">
+      <div className="bg-surface border border-grid rounded-2xl p-5 shadow-card lg:sticky lg:top-4 self-start">
+        <h2 className="font-semibold text-[15px] mb-3">{editing ? `Edit topic #${editing}` : 'New topic'}</h2>
 
         <div className="flex gap-2 mb-4">
           <input value={brief} onChange={(e) => setBrief(e.target.value)}
             placeholder='Describe it plainly: "monitor Proton Malaysia EV launches vs BYD"'
-            className="flex-1 border border-grid rounded-xl px-3 py-2 text-sm" />
+            className="flex-1 border border-grid rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition" />
           <button onClick={buildWithAI} disabled={building}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#4a3aa7] text-white text-sm
-                       disabled:opacity-50 active:scale-[0.98] whitespace-nowrap">
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accent text-white text-sm
+                       disabled:opacity-50 hover:brightness-110 active:scale-[0.98] whitespace-nowrap transition">
             <IconSparkles size={15} stroke={2} />
             {building ? 'Building' : 'AI build'}
           </button>
@@ -85,37 +93,28 @@ export default function Topics() {
         </div>
 
         <div className="mb-4">
-          <span className="text-sm text-inksec">Platforms (none = all)</span>
-          <div className="flex flex-wrap gap-1.5 mt-1.5">
-            {FEED_TABS.filter((t) => t !== 'all').map((pf) => {
-              const on = form.platforms.includes(pf)
-              return (
-                <button key={pf} onClick={() => setForm({
-                  ...form, platforms: on ? form.platforms.filter((x: string) => x !== pf) : [...form.platforms, pf],
-                })}
-                  className={`px-2.5 py-1 rounded-full text-xs border ${on ? 'bg-ink text-white border-ink' : 'bg-white border-grid text-inksec'}`}>
-                  {pf}
-                </button>
-              )
-            })}
+          <span className="text-sm text-inksec">Platforms <span className="text-muted">(none = all)</span></span>
+          <div className="mt-1.5">
+            <MultiSelect options={PLATFORM_OPTS} value={form.platforms} placeholder="All platforms"
+              onChange={(platforms) => setForm({ ...form, platforms })} />
           </div>
         </div>
 
-        {err && <div className="text-red-700 text-sm mb-3">{err}</div>}
+        {err && <div className="text-danger text-sm mb-3">{err}</div>}
         <div className="flex gap-2">
-          <button onClick={save} className="px-5 py-2 rounded-xl bg-ink text-white text-sm">{editing ? 'Save' : 'Create & start crawling'}</button>
-          {editing && <button onClick={() => { setEditing(null); setForm(EMPTY) }} className="px-4 py-2 text-sm text-inksec">Cancel</button>}
+          <button onClick={save} className="px-5 py-2 rounded-xl bg-ink text-white text-sm font-medium hover:brightness-110 active:scale-[0.99] transition">{editing ? 'Save' : 'Create & start crawling'}</button>
+          {editing && <button onClick={() => { setEditing(null); setForm(EMPTY) }} className="px-4 py-2 text-sm text-inksec hover:bg-plane rounded-xl transition">Cancel</button>}
         </div>
       </div>
 
       <div className="space-y-3">
         {topics.map((t) => (
-          <div key={t.id} className="bg-white border border-grid rounded-2xl p-4">
+          <div key={t.id} className="bg-surface border border-grid rounded-2xl p-4 shadow-card">
             <div className="flex items-center gap-2">
-              <span className={`w-2 h-2 rounded-full ${t.active ? 'bg-[#0ca30c]' : 'bg-muted'}`}
+              <span className={`w-2 h-2 rounded-full ${t.active ? 'bg-positive' : 'bg-muted'}`}
                 title={t.active ? 'auto-runs on schedule' : 'paused'} />
               <span className="font-semibold">{t.name}</span>
-              {t.run_once && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#2a78d6]/10 text-[#2a78d6]">queued</span>}
+              {t.run_once && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent/10 text-accent-ink">queued</span>}
               <span className="text-xs text-muted ml-auto">
                 {t.active ? `every ${t.schedule_minutes}m` : 'manual'} · last {t.last_run_at ? new Date(t.last_run_at).toLocaleTimeString() : 'never'}
               </span>
@@ -124,14 +123,14 @@ export default function Topics() {
             {t.criteria && <p className="text-xs text-inksec mt-1.5 line-clamp-2">{t.criteria}</p>}
             <div className="flex flex-wrap gap-x-4 gap-y-2 mt-2.5 text-xs font-medium items-center">
               <button onClick={() => post(`/topics/${t.id}/run-now`).then(reload)}
-                className="inline-flex items-center gap-1 text-[#2a78d6] active:scale-[0.97]">
+                className="inline-flex items-center gap-1 text-accent hover:text-accent-ink active:scale-[0.97] transition">
                 <IconPlayerPlay size={13} stroke={2} />Run now
               </button>
               {/* auto-run toggle: paused topics only crawl on Run now, so they stop filling storage */}
               <button onClick={() => post(`/topics/${t.id}/toggle-active`).then(reload)}
-                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border active:scale-[0.97]
-                  ${t.active ? 'border-[#0ca30c]/40 text-[#0a7d0a] bg-[#0ca30c]/5' : 'border-grid text-muted'}`}>
-                <span className={`w-2 h-2 rounded-full ${t.active ? 'bg-[#0ca30c]' : 'bg-muted'}`} />
+                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border active:scale-[0.97] transition
+                  ${t.active ? 'border-positive/40 text-positive bg-positive/5' : 'border-grid text-muted hover:text-ink'}`}>
+                <span className={`w-2 h-2 rounded-full ${t.active ? 'bg-positive' : 'bg-muted'}`} />
                 Auto-run {t.active ? 'on' : 'off'}
               </button>
               <button onClick={() => { setEditing(t.id); setForm({ ...t }) }}
@@ -154,7 +153,8 @@ export default function Topics() {
             </div>
           </div>
         ))}
-        {topics.length === 0 && <div className="text-muted text-sm p-6 text-center bg-white rounded-2xl border border-grid">No topics yet. Create one to start crawling.</div>}
+        {topics.length === 0 && <div className="text-muted text-sm p-6 text-center bg-surface rounded-2xl border border-grid">No topics yet. Create one to start crawling.</div>}
+      </div>
       </div>
     </div>
   )

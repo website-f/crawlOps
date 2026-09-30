@@ -186,8 +186,17 @@ export default function Feed() {
 
   return (
     <div>
+      <div className="flex items-end justify-between gap-3 mb-4 flex-wrap">
+        <div>
+          <h1 className="text-lg font-bold tracking-tight">Feed</h1>
+          <p className="text-[13px] text-inksec">
+            <span className="tabular-nums font-medium text-ink">{total.toLocaleString()}</span> mentions
+            {topicId ? ' in this topic' : ' across all sources'} · updates live
+          </p>
+        </div>
+      </div>
       {trending.length > 0 && (
-        <div className="flex items-center gap-2 mb-3 overflow-x-auto pb-1">
+        <div className="flex items-center gap-2 mb-3 overflow-x-auto pb-1 scrollbar-none">
           <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#c2410c] shrink-0">
             <IconChartLine size={14} stroke={2.2} />Trending
           </span>
@@ -203,11 +212,11 @@ export default function Feed() {
           ))}
         </div>
       )}
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
+      <div className="flex items-center gap-2 mb-4 flex-wrap bg-surface border border-grid rounded-2xl p-2.5 shadow-card">
         <label className="relative flex-1 min-w-56">
           <IconSearch size={16} stroke={2} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
           <input value={qLive} onChange={(e) => setQLive(e.target.value)} placeholder="Search posts, authors, domains"
-            className="w-full border border-grid rounded-xl pl-9 pr-3.5 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition" />
+            className="w-full border border-grid rounded-xl pl-9 pr-3.5 py-2 text-sm bg-plane/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition" />
         </label>
         <select value={topicId} onChange={(e) => setTopicId(e.target.value ? Number(e.target.value) : '')}
           className="border border-grid rounded-xl px-3 py-2 text-sm bg-white">
@@ -247,7 +256,7 @@ export default function Feed() {
 
         <div className="min-w-0">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-sm text-inksec">{total.toLocaleString()} posts</span>
+            <span className="text-[13px] text-muted">Showing <span className="tabular-nums text-inksec">{hits.length}</span> of <span className="tabular-nums text-inksec">{total.toLocaleString()}</span></span>
             {(platforms.length + sentiments.length) > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {[...platforms, ...sentiments].map((v) => (

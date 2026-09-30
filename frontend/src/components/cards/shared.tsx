@@ -1,8 +1,9 @@
-import { IconBookmark, IconEye, IconExternalLink, IconLock, IconPlayerPlayFilled, IconPlus, IconSparkles, IconVolumeOff } from '@tabler/icons-react'
+import { IconArrowsDiagonal, IconBookmark, IconEye, IconExternalLink, IconLock, IconPlayerPlayFilled, IconPlus, IconSparkles, IconVolumeOff } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PostHit, fmtNum, get, mediaUrl, post, thumbUrl, timeAgo } from '../../lib/api'
 import { SENTIMENT } from '../../lib/platform'
+import { usePostDetail } from '../postdetail-ctx'
 
 // tag palette loaded once, shared across cards, so label chips can be colored
 let _palette: { name: string; color: string }[] = []
@@ -89,6 +90,7 @@ export function MediaGrid({ p, dark = false }: { p: PostHit; dark?: boolean }) {
 
 /** Normalized CrawlOps footer under every native card: enrichment + actions. */
 export function OpsFooter({ p, onMuted }: { p: PostHit; onMuted?: () => void }) {
+  const { open } = usePostDetail()
   const [palette] = usePalette()
   const [labels, setLabels] = useState<string[]>(p.labels || [])
   const [sentiment, setSentiment] = useState(p.sentiment)
@@ -150,6 +152,10 @@ export function OpsFooter({ p, onMuted }: { p: PostHit; onMuted?: () => void }) 
         <button onClick={() => setMenu((m) => !m)} title="tag / correct sentiment"
           className={`inline-flex items-center gap-1 active:scale-[0.96] ${menu ? 'text-ink' : 'hover:text-ink'}`}>
           <IconBookmark size={13} stroke={2} />tag
+        </button>
+        <button onClick={() => open(p)} title="open full detail + this author's posts"
+          className="inline-flex items-center gap-1 hover:text-ink active:scale-[0.96]">
+          <IconArrowsDiagonal size={13} stroke={2} />details
         </button>
         <button onClick={() => mute('watch')} title="keep visible, exclude from analytics"
           className="inline-flex items-center gap-1 hover:text-ink active:scale-[0.96]">

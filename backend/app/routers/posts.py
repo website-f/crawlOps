@@ -18,7 +18,8 @@ router = APIRouter(prefix="/api", tags=["posts"])
 @router.get("/posts")
 def feed(q: str = "", platform: str = "", topic_id: int | None = None,
          sentiment: str = "", emotion: str = "", lang: str = "", country: str = "",
-         stance: str = "", issue: str = "", label: str = "", has_media: bool | None = None,
+         stance: str = "", issue: str = "", label: str = "", author_key: str = "",
+         has_media: bool | None = None,
          min_engagement: int = 0, min_reach: int = 0,
          since_ts: int | None = None, until_ts: int | None = None,
          verified: bool | None = None, sort: str = "posted_ts:desc",
@@ -52,6 +53,10 @@ def feed(q: str = "", platform: str = "", topic_id: int | None = None,
                 for v in label.split(",") if v.strip()]
         if labs:
             filters.append("(" + " OR ".join(labs) + ")")
+    if author_key:
+        # exact same-account lookup ("more from this author"); author_key is
+        # filterable in Meili and may contain punctuation -> double-quote + escape
+        filters.append(f'author_key = "{author_key.replace(chr(34), "")}"')
     if lang.isalpha() and len(lang) <= 8:
         filters.append(f"lang = '{lang}'")
     if has_media is not None:

@@ -1,6 +1,7 @@
 import {
   IconAntenna, IconBell, IconBolt, IconChartArcs, IconCpu, IconFileText,
-  IconHeartRateMonitor, IconHelp, IconLayoutDashboard, IconLogout, IconMap2,
+  IconHeartRateMonitor, IconHelp, IconLayoutDashboard, IconLayoutSidebarLeftCollapse,
+  IconLayoutSidebarRightCollapse, IconLogout, IconMap2,
   IconMenu2, IconMoodSmile, IconPlanet, IconPlug, IconScale, IconSettings,
   IconSparkles, IconTable, IconTargetArrow, IconUserOff, IconUsersGroup,
   IconUsers, IconX,
@@ -77,44 +78,49 @@ const GROUPS: { label: string; items: { to: string; label: string; Icon: any }[]
 ]
 const ALL_ITEMS = GROUPS.flatMap((g) => g.items)
 
-function Brand() {
+function Brand({ collapsed = false }: { collapsed?: boolean }) {
   return (
     <div className="flex items-center gap-2.5">
-      <span className="w-8 h-8 rounded-xl bg-ink grid place-items-center shadow-raise">
+      <span className="w-8 h-8 rounded-xl bg-ink grid place-items-center shadow-raise shrink-0">
         <IconAntenna size={17} color="#fcfcfb" stroke={2} />
       </span>
-      <span className="font-bold text-[17px] tracking-tight leading-none">Crawl<span className="text-accent">Ops</span></span>
+      {!collapsed && <span className="font-bold text-[17px] tracking-tight leading-none">Crawl<span className="text-accent">Ops</span></span>}
     </div>
   )
 }
 
-function NavItems({ onNavigate, onLogout }: { onNavigate?: () => void; onLogout: () => void }) {
+function NavItems({ onNavigate, onLogout, collapsed = false }: { onNavigate?: () => void; onLogout: () => void; collapsed?: boolean }) {
   return (
     <nav className="px-2.5 py-2 flex flex-col h-full overflow-y-auto">
-      {GROUPS.map((g) => (
+      {GROUPS.map((g, gi) => (
         <div key={g.label} className="mb-0.5">
-          <div className="px-3 pt-4 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.09em] text-muted">{g.label}</div>
+          {collapsed
+            ? (gi > 0 && <div className="mx-2 my-2 border-t border-grid" />)
+            : <div className="px-3 pt-4 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.09em] text-muted">{g.label}</div>}
           {g.items.map(({ to, label, Icon }) => (
             <NavLink key={to} to={to} end={to === '/' || to === '/analytics'} onClick={onNavigate}
+              title={collapsed ? label : undefined}
               className={({ isActive }) =>
-                `group relative flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] transition-colors
+                `group relative flex items-center rounded-lg text-[13px] transition-colors
+                 ${collapsed ? 'justify-center py-2.5' : 'gap-2.5 px-3 py-2'}
                  ${isActive
                    ? 'bg-accent/10 text-accent-ink font-semibold'
                    : 'text-inksec font-medium hover:bg-plane hover:text-ink'}`}>
               {({ isActive }) => (
                 <>
                   {isActive && <span className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[3px] rounded-r-full bg-accent" />}
-                  <Icon size={16.5} stroke={2} className={`shrink-0 ${isActive ? '' : 'text-muted group-hover:text-inksec'}`} />
-                  <span className="truncate">{label}</span>
+                  <Icon size={collapsed ? 19 : 16.5} stroke={2} className={`shrink-0 ${isActive ? '' : 'text-muted group-hover:text-inksec'}`} />
+                  {!collapsed && <span className="truncate">{label}</span>}
                 </>
               )}
             </NavLink>
           ))}
         </div>
       ))}
-      <button onClick={onLogout}
-        className="mt-3 mb-1 flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium text-inksec hover:bg-danger/5 hover:text-danger transition-colors">
-        <IconLogout size={16.5} stroke={2} />Sign out
+      <button onClick={onLogout} title={collapsed ? 'Sign out' : undefined}
+        className={`mt-3 mb-1 flex items-center rounded-lg text-[13px] font-medium text-inksec hover:bg-danger/5 hover:text-danger transition-colors
+          ${collapsed ? 'justify-center py-2.5' : 'gap-2.5 px-3 py-2'}`}>
+        <IconLogout size={collapsed ? 19 : 16.5} stroke={2} />{!collapsed && 'Sign out'}
       </button>
     </nav>
   )
@@ -122,6 +128,8 @@ function NavItems({ onNavigate, onLogout }: { onNavigate?: () => void; onLogout:
 
 function Shell() {
   const [drawer, setDrawer] = useState(false)
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('crawlops.sidebar') === '1')
+  const toggleCollapse = () => setCollapsed((c) => { localStorage.setItem('crawlops.sidebar', c ? '0' : '1'); return !c })
   const location = useLocation()
   const navigate = useNavigate()
   const current = ALL_ITEMS.find((n) => n.to === location.pathname)?.label ?? 'CrawlOps'
@@ -129,9 +137,22 @@ function Shell() {
 
   return (
     <div className="min-h-[100dvh] bg-plane text-ink lg:flex">
-      <aside className="hidden lg:flex w-60 shrink-0 border-r border-grid bg-surface flex-col sticky top-0 h-[100dvh]">
-        <div className="px-4 h-16 flex items-center border-b border-grid"><Brand /></div>
-        <NavItems onLogout={logout} />
+      <aside className={`hidden lg:flex shrink-0 border-r border-grid bg-surface flex-col sticky top-0 h-[100dvh] transition-[width] duration-200 ${collapsed ? 'w-16' : 'w-60'}`}>
+        <div className={`h-16 flex items-center border-b border-grid ${collapsed ? 'justify-center' : 'px-4 justify-between'}`}>
+          {collapsed ? (
+            <button onClick={toggleCollapse} title="Expand sidebar" className="p-1.5 rounded-lg hover:bg-plane transition active:scale-95">
+              <IconLayoutSidebarRightCollapse size={20} stroke={2} className="text-inksec" />
+            </button>
+          ) : (
+            <>
+              <Brand />
+              <button onClick={toggleCollapse} title="Collapse sidebar" className="p-1.5 rounded-lg hover:bg-plane transition active:scale-95 text-muted hover:text-ink">
+                <IconLayoutSidebarLeftCollapse size={19} stroke={2} />
+              </button>
+            </>
+          )}
+        </div>
+        <NavItems onLogout={logout} collapsed={collapsed} />
       </aside>
 
       <header className="lg:hidden sticky top-0 z-40 flex items-center gap-3 px-4 h-14 bg-surface/90 backdrop-blur border-b border-grid">

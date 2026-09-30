@@ -6,10 +6,22 @@ from ..config import settings
 from ..db import get_db
 from ..models import FetchRun, Proxy, Source, StealthSession
 from ..services import credentials as creds
+from ..services import extension_pack
 from ..services.credentials import decrypt_proxy, encrypt_proxy
 from ..services.proxy_manager import proxy_manager
 
 router = APIRouter(prefix="/api/sources", tags=["sources"])
+
+
+@router.get("/extension.zip")
+def download_extension():
+    """One-click download of the browser-extension folder as a zip the operator
+    unzips and loads unpacked (chrome://extensions -> Developer mode)."""
+    return Response(
+        content=extension_pack.build_zip(),
+        media_type="application/zip",
+        headers={"Content-Disposition": "attachment; filename=crawlops-connector.zip"},
+    )
 
 
 STEALTH_CONNECTORS = {"facebook_stealth", "instagram_stealth", "tiktok_stealth",

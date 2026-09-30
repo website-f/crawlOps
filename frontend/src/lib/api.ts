@@ -78,6 +78,14 @@ export interface PostHit {
   score?: number   // cosine similarity, set by semantic search / "more like this"
   labels?: string[]
   sentiment_locked?: boolean
+  // enrichment extras the backend emits (see meili.doc_from_post); optional on the client
+  emotion?: string | null
+  entities?: string[]
+  virality?: number | null
+  risk?: number | null
+  country?: string | null
+  country_name?: string | null
+  region?: string | null
 }
 
 export const mediaUrl = (m: PostHit['media'][number]) =>
