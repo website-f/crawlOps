@@ -35,70 +35,79 @@ export default function Alerts() {
   const topicName = (id: number) => topics.find((t) => t.id === id)?.name ?? `topic ${id}`
 
   return (
-    <div className="grid lg:grid-cols-2 gap-6">
-      <div className="space-y-5">
-        <div className="bg-white border border-grid rounded-2xl p-5">
-          <h2 className="font-semibold text-lg mb-1">Alert rules</h2>
-          <p className="text-sm text-inksec mb-4">
-            Delivery uses the channels set in Settings. Spike detection uses an EWMA baseline plus MAD residuals; negative-sentiment fires when the negative share crosses your threshold.
-          </p>
-          <div className="flex flex-wrap items-center gap-2 mb-4">
-            <select value={form.topic_id} onChange={(e) => setForm({ ...form, topic_id: Number(e.target.value) })}
-              className="border border-grid rounded-lg px-2 py-1.5 text-sm">
-              {topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-            <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}
-              className="border border-grid rounded-lg px-2 py-1.5 text-sm">
-              <option value="spike">Volume spike</option>
-              <option value="neg_sentiment">Negative sentiment</option>
-            </select>
-            {form.kind === 'neg_sentiment' && (
-              <label className="text-sm inline-flex items-center gap-1">neg %
-                <input type="number" value={form.neg_pct} onChange={(e) => setForm({ ...form, neg_pct: Number(e.target.value) })}
-                  className="border border-grid rounded-lg px-2 py-1 w-16" />
-              </label>
-            )}
-            <button onClick={create}
-              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-ink text-white text-sm active:scale-[0.98]">
-              <IconBell size={15} stroke={2} />Add rule
-            </button>
-          </div>
-
-          <div className="divide-y divide-grid/60">
-            {rules.map((r) => (
-              <div key={r.id} className="flex items-center gap-3 py-2.5 text-sm">
-                <span className={`w-2 h-2 rounded-full ${r.active ? 'bg-[#0ca30c]' : 'bg-muted'}`} />
-                <span className="font-medium">{KIND_LABEL[r.kind] || r.kind}</span>
-                <span className="text-inksec">on {topicName(r.topic_id)}</span>
-                {r.kind === 'neg_sentiment' && <span className="text-xs text-muted">&ge;{r.config?.neg_pct ?? 40}%</span>}
-                <button onClick={() => del(`/alerts/rules/${r.id}`).then(reload)}
-                  className="ml-auto text-inksec hover:text-red-700"><IconTrash size={15} stroke={2} /></button>
-              </div>
-            ))}
-            {rules.length === 0 && <div className="text-muted text-sm py-3">No rules yet.</div>}
-          </div>
-        </div>
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-lg font-bold tracking-tight">Alerts</h1>
+        <p className="text-[13px] text-inksec mt-0.5">
+          Watch your topics for volume spikes and negative-sentiment surges, and get notified automatically on your configured channels.
+        </p>
       </div>
 
-      <div className="bg-white border border-grid rounded-2xl p-5">
-        <h2 className="font-semibold text-lg mb-3">Recent alerts</h2>
-        <div className="space-y-3">
-          {events.map((e) => (
-            <div key={e.id} className="flex gap-3 p-3 rounded-xl bg-plane/60 border border-grid">
-              <IconBellRinging size={18} stroke={1.8} className="text-[#d03b3b] shrink-0 mt-0.5" />
-              <div className="min-w-0">
-                <div className="font-medium text-sm">{e.payload?.title || 'Alert'}</div>
-                <div className="text-sm text-inksec">{e.payload?.body}</div>
-                <div className="text-xs text-muted mt-0.5">{new Date(e.fired_at).toLocaleString()}</div>
+      <div className="grid lg:grid-cols-2 gap-6">
+        <div className="space-y-5">
+          <div className="bg-white border border-grid rounded-2xl shadow-card p-5">
+            <h2 className="font-semibold mb-1">Alert rules</h2>
+            <p className="text-sm text-inksec mb-4">
+              Delivery uses the channels set in Settings. Spike detection uses an EWMA baseline plus MAD residuals; negative-sentiment fires when the negative share crosses your threshold.
+            </p>
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              <select value={form.topic_id} onChange={(e) => setForm({ ...form, topic_id: Number(e.target.value) })}
+                className="border border-grid rounded-xl px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition">
+                {topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+              <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}
+                className="border border-grid rounded-xl px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition">
+                <option value="spike">Volume spike</option>
+                <option value="neg_sentiment">Negative sentiment</option>
+              </select>
+              {form.kind === 'neg_sentiment' && (
+                <label className="text-sm inline-flex items-center gap-1">neg %
+                  <input type="number" value={form.neg_pct} onChange={(e) => setForm({ ...form, neg_pct: Number(e.target.value) })}
+                    className="border border-grid rounded-xl px-2 py-1 w-16 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition" />
+                </label>
+              )}
+              <button onClick={create}
+                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-ink text-white text-sm hover:brightness-110 active:scale-[0.99] transition">
+                <IconBell size={15} stroke={2} />Add rule
+              </button>
+            </div>
+
+            <div className="divide-y divide-grid/60">
+              {rules.map((r) => (
+                <div key={r.id} className="flex items-center gap-3 py-2.5 text-sm">
+                  <span className={`w-2 h-2 rounded-full ${r.active ? 'bg-positive' : 'bg-muted'}`} />
+                  <span className="font-medium">{KIND_LABEL[r.kind] || r.kind}</span>
+                  <span className="text-inksec">on {topicName(r.topic_id)}</span>
+                  {r.kind === 'neg_sentiment' && <span className="text-xs text-muted">&ge;{r.config?.neg_pct ?? 40}%</span>}
+                  <button onClick={() => del(`/alerts/rules/${r.id}`).then(reload)}
+                    className="ml-auto text-inksec hover:text-danger transition"><IconTrash size={15} stroke={2} /></button>
+                </div>
+              ))}
+              {rules.length === 0 && <div className="text-muted text-sm py-3">No rules yet.</div>}
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white border border-grid rounded-2xl shadow-card p-5">
+          <h2 className="font-semibold mb-3">Recent alerts</h2>
+          <div className="space-y-3">
+            {events.map((e) => (
+              <div key={e.id} className="flex gap-3 p-3 rounded-xl bg-plane/60 border border-grid">
+                <IconBellRinging size={18} stroke={1.8} className="text-danger shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <div className="font-medium text-sm">{e.payload?.title || 'Alert'}</div>
+                  <div className="text-sm text-inksec">{e.payload?.body}</div>
+                  <div className="text-xs text-muted mt-0.5">{new Date(e.fired_at).toLocaleString()}</div>
+                </div>
               </div>
-            </div>
-          ))}
-          {events.length === 0 && (
-            <div className="text-center py-12">
-              <IconBell size={28} stroke={1.5} className="mx-auto text-muted" />
-              <div className="text-muted text-sm mt-2">No alerts fired yet.</div>
-            </div>
-          )}
+            ))}
+            {events.length === 0 && (
+              <div className="text-center py-12">
+                <IconBell size={28} stroke={1.5} className="mx-auto text-muted" />
+                <div className="text-muted text-sm mt-2">No alerts fired yet.</div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

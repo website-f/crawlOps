@@ -50,9 +50,9 @@ export default function Authors() {
         <button onClick={() => setProfile(null)} className="inline-flex items-center gap-1 text-sm text-inksec hover:text-ink">
           <IconArrowLeft size={15} stroke={2} />Back to authors
         </button>
-        <div className="bg-white border border-grid rounded-2xl p-5">
+        <div className="bg-white border border-grid rounded-2xl shadow-card p-5">
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-lg font-bold">{profile.identity.display || profile.identity.name || profile.identity.handle}</h1>
+            <h1 className="text-lg font-bold tracking-tight">{profile.identity.display || profile.identity.name || profile.identity.handle}</h1>
             {profile.cross_platform && (
               <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-accent/10 text-accent">
                 <IconWorld size={12} stroke={2} />posts on {profile.totals.platforms} platforms
@@ -69,7 +69,7 @@ export default function Authors() {
               <div key={pl.platform} className="flex items-center gap-2 border border-grid rounded-xl px-3 py-2">
                 <PlatformIcon platform={pl.platform} size={20} />
                 <span className="capitalize font-medium text-sm">{pl.platform}</span>
-                {pl.verified && <span className="text-[10px] text-[#2a78d6]">verified</span>}
+                {pl.verified && <span className="text-[10px] text-accent">verified</span>}
                 <span className="ml-auto text-xs text-muted tabular-nums">{pl.posts} posts · {fmtNum(pl.reach)} reach</span>
               </div>
             ))}
@@ -107,27 +107,28 @@ export default function Authors() {
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-2">
-        <IconUsersGroup size={20} stroke={2} className="text-[#2a78d6]" />
-        <h1 className="text-lg font-bold">Author intelligence</h1>
+        <IconUsersGroup size={20} stroke={2} className="text-accent" />
+        <h1 className="text-lg font-bold tracking-tight">Author intelligence</h1>
         <select value={topicId} onChange={(e) => setTopicId(e.target.value)}
-          className="ml-auto border border-grid rounded-lg px-2 py-1.5 text-sm">
+          className="ml-auto border border-grid rounded-xl px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition">
           <option value="">All topics</option>
           {topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
       </div>
-      <p className="text-sm text-muted -mt-2">Most active voices on your topics. Open one to see every platform they post on and everything they've said. Cross-platform match is heuristic (by name/handle).</p>
+      <p className="text-[13px] text-inksec -mt-2">Most active voices on your topics. Open one to see every platform they post on and everything they've said. Cross-platform match is heuristic (by name/handle).</p>
 
-      <div className="flex items-center gap-2 border border-grid rounded-xl px-3 bg-white max-w-md">
+      <div className="flex items-center gap-2 border border-grid rounded-xl px-3 bg-white max-w-md focus-within:ring-2 focus-within:ring-accent/30 focus-within:border-accent transition">
         <IconSearch size={16} stroke={2} className="text-muted" />
         <input value={q} onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && q.trim() && openAuthor(q.trim(), q.trim())}
           placeholder="Look up an author by name or @handle" className="flex-1 py-2.5 text-sm outline-none bg-transparent" />
-        <button onClick={() => q.trim() && openAuthor(q.trim(), q.trim())} className="text-sm text-[#2a78d6] font-medium">Look up</button>
+        <button onClick={() => q.trim() && openAuthor(q.trim(), q.trim())} className="text-sm text-accent hover:text-accent-ink font-medium transition">Look up</button>
       </div>
 
-      {loading && <div className="py-10 text-center text-muted">Loading…</div>}
+      {loading && <div className="py-16 grid place-items-center"><span className="w-6 h-6 rounded-full border-2 border-grid border-t-accent animate-spin" /></div>}
 
-      <div className="bg-white border border-grid rounded-2xl overflow-hidden">
+      <div className="bg-white border border-grid rounded-2xl shadow-card overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead><tr className="text-[11px] text-muted text-left border-b border-grid">
             <th className="font-normal px-4 py-2">author</th><th className="font-normal">platform</th>
@@ -150,6 +151,7 @@ export default function Authors() {
             {top.length === 0 && !loading && <tr><td colSpan={5} className="px-4 py-8 text-center text-muted">No authors yet.</td></tr>}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   )

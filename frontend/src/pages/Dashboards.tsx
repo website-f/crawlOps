@@ -71,33 +71,37 @@ export default function Dashboards() {
 
   return (
     <div className="space-y-4">
+      <div>
+        <h1 className="text-lg font-bold tracking-tight">Dashboards</h1>
+        <p className="text-[13px] text-inksec mt-0.5">Build your own view — pick a topic and range to scope every widget at once.</p>
+      </div>
       <div className="flex items-center gap-2 flex-wrap">
         <IconLayoutDashboard size={20} stroke={2} className="text-accent" />
         <select value={cur?.id ?? ''} onChange={(e) => setCur(dashes.find((d) => d.id === Number(e.target.value)) || null)}
-          className="border border-grid rounded-xl px-3 py-2 text-sm bg-white">
+          className="border border-grid rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition">
           <option value="">Select dashboard…</option>
           {dashes.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
-        <button onClick={newDash} className="inline-flex items-center gap-1 px-3 py-2 rounded-xl text-sm border border-grid bg-white"><IconPlus size={15} stroke={2} />New</button>
+        <button onClick={newDash} className="inline-flex items-center gap-1 px-3 py-2 rounded-xl text-sm border border-grid bg-white hover:bg-plane transition"><IconPlus size={15} stroke={2} />New</button>
         {cur && (
           <>
             <select value={topicId} onChange={(e) => setTopicId(e.target.value ? Number(e.target.value) : '')}
-              className="border border-grid rounded-xl px-3 py-2 text-sm bg-white">
+              className="border border-grid rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition">
               <option value="">All topics</option>{topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
-            <select value={days} onChange={(e) => setDays(Number(e.target.value))} className="border border-grid rounded-xl px-3 py-2 text-sm bg-white">
+            <select value={days} onChange={(e) => setDays(Number(e.target.value))} className="border border-grid rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition">
               <option value={7}>7 days</option><option value={30}>30 days</option><option value={90}>90 days</option>
             </select>
             <div className="relative">
-              <button onClick={() => setAddOpen((o) => !o)} className="inline-flex items-center gap-1 px-3 py-2 rounded-xl text-sm border border-grid bg-white"><IconPlus size={15} stroke={2} />Widget</button>
+              <button onClick={() => setAddOpen((o) => !o)} className="inline-flex items-center gap-1 px-3 py-2 rounded-xl text-sm border border-grid bg-white hover:bg-plane transition"><IconPlus size={15} stroke={2} />Widget</button>
               {addOpen && (
-                <div className="absolute z-30 mt-1 w-48 bg-white border border-grid rounded-xl shadow-xl p-1">
+                <div className="absolute z-30 mt-1 w-48 bg-white border border-grid rounded-xl shadow-float p-1">
                   {CATALOG.map((w) => <button key={w.type} onClick={() => addWidget(w)} className="w-full text-left px-3 py-1.5 rounded-lg text-sm hover:bg-plane">{w.title}</button>)}
                 </div>
               )}
             </div>
             <button onClick={saveDash} disabled={!dirty}
-              className={`ml-auto inline-flex items-center gap-1 px-3 py-2 rounded-xl text-sm ${dirty ? 'bg-ink text-white' : 'border border-grid bg-white text-muted'}`}>
+              className={`ml-auto inline-flex items-center gap-1 px-3 py-2 rounded-xl text-sm transition ${dirty ? 'bg-ink text-white hover:brightness-110 active:scale-[0.99]' : 'border border-grid bg-white text-muted'}`}>
               <IconDeviceFloppy size={15} stroke={2} />{dirty ? 'Save' : 'Saved'}
             </button>
             <button onClick={removeDash} className="inline-flex items-center gap-1 px-3 py-2 rounded-xl text-sm border border-grid bg-white text-danger hover:bg-danger/5 transition"><IconTrash size={15} stroke={2} /></button>
@@ -106,7 +110,7 @@ export default function Dashboards() {
       </div>
 
       {!cur && (
-        <div className="text-center py-20 bg-white rounded-2xl border border-grid text-muted">
+        <div className="text-center py-20 bg-white rounded-2xl border border-grid shadow-card text-muted">
           <IconLayoutDashboard size={32} stroke={1.5} className="mx-auto" />
           <div className="mt-3 font-medium text-ink">Build your own dashboard</div>
           <p className="text-sm mt-1">Create one, then add widgets. Pick a topic + time range to scope every widget at once.</p>
@@ -116,13 +120,13 @@ export default function Dashboards() {
       {cur && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {cur.widgets.map((w, i) => (
-            <div key={w.id} className="bg-white border border-grid rounded-2xl p-4">
+            <div key={w.id} className="bg-white border border-grid rounded-2xl shadow-card p-4">
               <div className="flex items-center gap-1 mb-2">
                 <span className="text-sm font-semibold">{w.title}</span>
                 <div className="ml-auto flex items-center gap-0.5 text-muted">
                   <button onClick={() => move(i, -1)} className="p-0.5 hover:text-ink"><IconArrowBigUp size={14} stroke={2} /></button>
                   <button onClick={() => move(i, 1)} className="p-0.5 hover:text-ink"><IconArrowBigDown size={14} stroke={2} /></button>
-                  <button onClick={() => removeWidget(w.id)} className="p-0.5 hover:text-red-700"><IconX size={14} stroke={2} /></button>
+                  <button onClick={() => removeWidget(w.id)} className="p-0.5 hover:text-danger"><IconX size={14} stroke={2} /></button>
                 </div>
               </div>
               <WidgetBody type={w.type} ov={ov} trend={trend} authors={authors} />
@@ -208,7 +212,7 @@ function WidgetBody({ type, ov, trend, authors }: { type: string; ov: any; trend
     const pts = vals.map((v, i) => `${(i / Math.max(1, vals.length - 1)) * w},${h - (v / max) * h}`).join(' ')
     return (
       <div>
-        <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-16"><polyline fill="none" stroke="#2a78d6" strokeWidth="2" points={pts} /></svg>
+        <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-16"><polyline fill="none" className="stroke-accent" strokeWidth="2" points={pts} /></svg>
         <div className="text-xs text-muted mt-1">{fmtNum(vals.reduce((a, b) => a + b, 0))} mentions over {days.length} days</div>
       </div>
     )

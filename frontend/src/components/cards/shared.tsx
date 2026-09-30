@@ -147,7 +147,7 @@ export function OpsFooter({ p, onMuted }: { p: PostHit; onMuted?: () => void }) 
         {(p.topics || []).slice(0, 2).map((t) => (
           <span key={t} className="px-1.5 py-0.5 rounded-full bg-grid/60 text-inksec">{t}</span>
         ))}
-        {p.suppression_watch && <span className="text-amber-600 font-medium">watched</span>}
+        {p.suppression_watch && <span className="text-warn font-medium">watched</span>}
         <span className="flex-1" />
         <button onClick={() => setMenu((m) => !m)} title="tag / correct sentiment"
           className={`inline-flex items-center gap-1 active:scale-[0.96] ${menu ? 'text-ink' : 'hover:text-ink'}`}>
@@ -162,7 +162,7 @@ export function OpsFooter({ p, onMuted }: { p: PostHit; onMuted?: () => void }) 
           <IconEye size={13} stroke={2} />watch
         </button>
         <button onClick={() => mute('hide')} title="hide author everywhere (internal shadowban)"
-          className="inline-flex items-center gap-1 hover:text-red-700 active:scale-[0.96]">
+          className="inline-flex items-center gap-1 hover:text-danger active:scale-[0.96]">
           <IconVolumeOff size={13} stroke={2} />mute
         </button>
         <Link to={`/search?similar=${p.id}`} title="find semantically similar posts"

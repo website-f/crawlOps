@@ -39,7 +39,7 @@ export function Sparkline({ data, color = '#2a78d6' }: { data: number[]; color?:
 
 export function StatTile({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="bg-white border border-grid rounded-2xl p-4">
+    <div className="bg-white border border-grid rounded-2xl shadow-card p-4">
       <div className="text-xs text-inksec">{label}</div>
       <div className="text-2xl font-semibold text-ink mt-1 tabular-nums">{value}</div>
       {hint && <div className="text-[11px] text-muted mt-0.5">{hint}</div>}
@@ -51,7 +51,7 @@ export function Panel({ title, right, children, className = '' }: {
   title: string; right?: React.ReactNode; children: React.ReactNode; className?: string
 }) {
   return (
-    <div className={`bg-white border border-grid rounded-2xl p-4 ${className}`}>
+    <div className={`bg-white border border-grid rounded-2xl shadow-card p-4 ${className}`}>
       <div className="flex items-center mb-3">
         <h3 className="text-sm font-semibold">{title}</h3>
         {right && <div className="ml-auto">{right}</div>}
@@ -73,7 +73,7 @@ export function FacetPanel({ title, options, selected, onToggle, icon }: {
   const max = Math.max(...options.map((o) => o.count), 1)
   return (
     <div className="border-b border-grid/70 pb-3 mb-3 last:border-0">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted mb-1.5">{title}</div>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted mb-1.5">{title}</div>
       <div className="space-y-0.5">
         {options.slice(0, 12).map((o) => {
           const on = selected.includes(o.value)

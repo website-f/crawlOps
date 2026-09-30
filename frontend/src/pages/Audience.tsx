@@ -44,17 +44,17 @@ export default function Audience() {
     <div>
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <div className="mr-auto">
-          <h2 className="font-semibold text-lg">Audience &amp; Issues</h2>
-          <p className="text-sm text-inksec">Which issues the public is talking about, how they lean, and what resonates — aggregate and anonymous.</p>
+          <h1 className="text-lg font-bold tracking-tight">Audience &amp; Issues</h1>
+          <p className="text-[13px] text-inksec mt-0.5">Which issues the public is talking about, how they lean, and what resonates — aggregate and anonymous.</p>
         </div>
         <select value={topicId} onChange={(e) => setTopicId(e.target.value ? Number(e.target.value) : '')}
-          className="border border-grid rounded-lg px-3 py-1.5 text-sm bg-white">
+          className="border border-grid rounded-xl px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition">
           <option value="">All topics</option>
           {topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
-        <div className="flex rounded-lg border border-grid overflow-hidden">
+        <div className="flex rounded-xl border border-grid overflow-hidden">
           {[7, 30, 90].map((d) => (
-            <button key={d} onClick={() => setDays(d)} className={`px-3 py-1.5 text-sm ${days === d ? 'bg-ink text-white' : 'bg-white'}`}>{d}d</button>
+            <button key={d} onClick={() => setDays(d)} className={`px-3 py-1.5 text-sm transition ${days === d ? 'bg-ink text-white' : 'bg-white hover:bg-plane'}`}>{d}d</button>
           ))}
         </div>
       </div>
@@ -64,12 +64,15 @@ export default function Audience() {
         These are aggregate opinion segments from public posts — counts and regions only. CrawlOps does not build per-person profiles or targeting lists.
       </div>
 
-      {loading && <div className="text-muted text-sm py-10 text-center">Loading…</div>}
+      {loading && <div className="py-16 grid place-items-center"><span className="w-6 h-6 rounded-full border-2 border-grid border-t-accent animate-spin" /></div>}
 
       {!loading && !issues.length && (
-        <div className="text-center py-16 bg-white rounded-2xl border border-grid text-muted text-sm">
-          No issue data yet. Enable an AI provider so the judge can classify posts by issue and stance,
-          then let the crawler run. Edit the issue list in Settings.
+        <div className="grid place-items-center gap-2 py-16 bg-white rounded-2xl border border-grid shadow-card text-center">
+          <IconInfoCircle size={24} stroke={1.5} className="text-muted" />
+          <p className="text-muted text-sm max-w-md">
+            No issue data yet. Enable an AI provider so the judge can classify posts by issue and stance,
+            then let the crawler run. Edit the issue list in Settings.
+          </p>
         </div>
       )}
 
@@ -87,7 +90,7 @@ export default function Audience() {
               <div>
                 <div className="flex justify-between text-[11px] text-inksec mb-1">
                   <span>Sentiment</span>
-                  <span className={it.avg_sentiment > 0.1 ? 'text-[#006300]' : it.avg_sentiment < -0.1 ? 'text-[#d03b3b]' : ''}>{it.avg_sentiment > 0 ? '+' : ''}{it.avg_sentiment}</span>
+                  <span className={it.avg_sentiment > 0.1 ? 'text-positive' : it.avg_sentiment < -0.1 ? 'text-danger' : ''}>{it.avg_sentiment > 0 ? '+' : ''}{it.avg_sentiment}</span>
                 </div>
                 <SplitBar parts={[['pos', it.sentiment.pos, SENTIMENT.pos.color], ['neu', it.sentiment.neu, SENTIMENT.neu.color], ['neg', it.sentiment.neg, SENTIMENT.neg.color]]} />
               </div>
@@ -96,7 +99,7 @@ export default function Audience() {
                   <span>Resonance</span><span>avg {fmtNum(it.resonance)} eng/post</span>
                 </div>
                 <div className="h-2 rounded-full bg-grid overflow-hidden">
-                  <div className="h-full rounded-full" style={{ width: `${(it.resonance / maxRes) * 100}%`, background: '#4a3aa7' }} />
+                  <div className="h-full rounded-full bg-accent" style={{ width: `${(it.resonance / maxRes) * 100}%` }} />
                 </div>
               </div>
               {it.top_regions.length > 0 && (

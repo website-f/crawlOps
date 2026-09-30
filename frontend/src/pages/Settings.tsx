@@ -343,7 +343,7 @@ export default function Settings() {
                 <span className="font-medium">{u.username}</span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-grid text-inksec">{u.role}</span>
                 <button onClick={() => del(`/auth/users/${u.id}`).then(reloadUsers)}
-                  className="ml-auto text-inksec hover:text-red-700"><IconTrash size={14} stroke={2} /></button>
+                  className="ml-auto text-inksec hover:text-danger transition"><IconTrash size={14} stroke={2} /></button>
               </div>
             ))}
           </div>

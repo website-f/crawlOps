@@ -20,6 +20,7 @@ export default {
         },
         danger: '#d64545',
         positive: '#0a7d0a',
+        warn: '#b45309',
       },
       fontFamily: {
         sans: ['system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],

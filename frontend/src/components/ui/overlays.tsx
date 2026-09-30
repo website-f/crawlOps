@@ -132,7 +132,7 @@ function DialogModal({ active, onClose }: { active: Active; onClose: (v: any) =>
 
 const TOAST_STYLE: Record<Toast['kind'], { cls: string; Icon: any }> = {
   info: { cls: 'text-accent', Icon: IconInfoCircle },
-  success: { cls: 'text-[#0a7d0a]', Icon: IconCheck },
+  success: { cls: 'text-positive', Icon: IconCheck },
   error: { cls: 'text-danger', Icon: IconAlertTriangle },
 }
 

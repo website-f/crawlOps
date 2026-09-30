@@ -45,13 +45,18 @@ export default function MapView() {
   const maxTotal = Math.max(1, ...withCoords.map((c) => c.total))
 
   return (
-    <div className="grid lg:grid-cols-[1fr_320px] gap-5">
-      <div className="bg-white border border-grid rounded-2xl overflow-hidden">
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-lg font-bold tracking-tight">Map</h1>
+        <p className="text-[13px] text-inksec mt-0.5">Where the conversation is coming from, colored by sentiment.</p>
+      </div>
+      <div className="grid lg:grid-cols-[1fr_320px] gap-5">
+      <div className="bg-white border border-grid rounded-2xl shadow-card overflow-hidden">
         <div className="px-4 py-3 text-sm font-medium border-b border-grid flex items-center gap-3 flex-wrap">
           Geographic distribution
           <span className="text-muted font-normal">{withCoords.length} countries · {posts.length} pinned posts</span>
           <select value={topicId} onChange={(e) => setTopicId(e.target.value ? Number(e.target.value) : '')}
-            className="ml-auto border border-grid rounded-lg px-2 py-1 text-sm">
+            className="ml-auto border border-grid rounded-xl px-2.5 py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition">
             <option value="">All topics</option>
             {topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
@@ -86,7 +91,7 @@ export default function MapView() {
       </div>
 
       <div className="space-y-5">
-        <div className="bg-white border border-grid rounded-2xl p-4">
+        <div className="bg-white border border-grid rounded-2xl shadow-card p-4">
           <div className="text-sm font-medium mb-3">By country</div>
           <div className="space-y-2 max-h-72 overflow-y-auto">
             {countries.map((c) => (
@@ -104,7 +109,7 @@ export default function MapView() {
         </div>
 
         {focus && (
-          <div className="bg-white border border-grid rounded-2xl p-4">
+          <div className="bg-white border border-grid rounded-2xl shadow-card p-4">
             <div className="text-sm font-medium mb-3">Regions in {countries.find((c) => c.country === focus)?.name || focus?.toUpperCase()}</div>
             <div className="space-y-2 max-h-64 overflow-y-auto">
               {regions.filter((r) => r.country === focus).map((r) => (
@@ -117,6 +122,7 @@ export default function MapView() {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   )

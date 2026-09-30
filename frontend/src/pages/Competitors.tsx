@@ -51,9 +51,9 @@ export default function Competitors() {
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-2 flex-wrap">
-        <h2 className="font-semibold text-lg mr-auto">Competitors &amp; Share of Voice</h2>
+        <h1 className="text-lg font-bold tracking-tight mr-auto">Competitors &amp; Share of Voice</h1>
         <select value={topicId} onChange={(e) => setTopicId(e.target.value ? Number(e.target.value) : '')}
-          className="border border-grid rounded-lg px-3 py-1.5 text-sm bg-white">
+          className="border border-grid rounded-xl px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition">
           {topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
       </div>
@@ -84,7 +84,7 @@ export default function Competitors() {
                 {compare.map((c, i) => (
                   <div key={c.name} className="flex items-center gap-3">
                     <span className="w-32 truncate text-sm flex items-center gap-1">
-                      {c.is_brand && <IconStarFilled size={12} className="text-[#eda100]" />}{c.name}
+                      {c.is_brand && <IconStarFilled size={12} className="text-warn" />}{c.name}
                     </span>
                     <div className="flex-1 h-6 rounded-lg bg-grid/50 overflow-hidden relative">
                       <div className="h-full rounded-lg flex items-center justify-end px-2 text-white text-xs font-medium"
@@ -105,17 +105,17 @@ export default function Competitors() {
           <Panel title="Tracked entities">
             <div className="space-y-2 mb-3">
               <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Brand / competitor name"
-                className="w-full border border-grid rounded-lg px-3 py-2 text-sm" />
+                className="w-full border border-grid rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition" />
               <input value={keywords} onChange={(e) => setKeywords(e.target.value)}
                 placeholder="keywords, comma separated (defaults to name)"
-                className="w-full border border-grid rounded-lg px-3 py-2 text-sm font-mono text-[12px]" />
+                className="w-full border border-grid rounded-xl px-3 py-2 text-sm font-mono text-[12px] focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition" />
               <div className="flex gap-2">
                 <button onClick={() => addEntity(true)}
-                  className="flex-1 inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-[#eda100] text-white text-xs active:scale-[0.98]">
+                  className="flex-1 inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-xl bg-warn text-white text-xs hover:brightness-110 active:scale-[0.99] transition">
                   <IconStar size={13} stroke={2} />Add as my brand
                 </button>
                 <button onClick={() => addEntity(false)}
-                  className="flex-1 inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-ink text-white text-xs active:scale-[0.98]">
+                  className="flex-1 inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-xl bg-ink text-white text-xs hover:brightness-110 active:scale-[0.99] transition">
                   <IconPlus size={13} stroke={2} />Add competitor
                 </button>
               </div>
@@ -124,14 +124,14 @@ export default function Competitors() {
               {entities.map((e) => (
                 <div key={e.id} className="flex items-center gap-2 py-2 text-sm">
                   <button onClick={() => toggleBrand(e)} title="mark as own brand">
-                    {e.is_own_brand ? <IconStarFilled size={14} className="text-[#eda100]" /> : <IconStar size={14} className="text-muted" />}
+                    {e.is_own_brand ? <IconStarFilled size={14} className="text-warn" /> : <IconStar size={14} className="text-muted" />}
                   </button>
                   <div className="min-w-0">
                     <div className="font-medium truncate">{e.name}</div>
                     {e.keywords.length > 0 && <div className="text-[11px] text-muted truncate">{e.keywords.join(', ')}</div>}
                   </div>
                   <button onClick={() => del(`/benchmark/entities/${e.id}`).then(reload)}
-                    className="ml-auto text-inksec hover:text-red-700"><IconTrash size={14} stroke={2} /></button>
+                    className="ml-auto text-inksec hover:text-danger transition"><IconTrash size={14} stroke={2} /></button>
                 </div>
               ))}
               {entities.length === 0 && <div className="text-muted text-sm py-4 text-center">No entities tracked.</div>}

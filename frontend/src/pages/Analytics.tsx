@@ -160,25 +160,25 @@ export default function Analytics({ view = 'overview' }: { view?: AnalyticsView 
   return (
     <div>
       <div className="flex items-center gap-2 mb-4 flex-wrap">
-        <h2 className="font-semibold text-lg mr-auto">{TITLES[view]}</h2>
+        <h1 className="text-lg font-bold tracking-tight mr-auto">{TITLES[view]}</h1>
         {usesExplore && (
           <button onClick={() => setRailOpen(!railOpen)}
-            className="lg:hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border bg-white border-grid">
+            className="lg:hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm border bg-white border-grid hover:bg-plane transition">
             <IconFilter size={15} stroke={2} />Filters{activeCount > 0 && ` (${activeCount})`}
           </button>
         )}
         <select value={topicId} onChange={(e) => setTopicId(e.target.value ? Number(e.target.value) : '')}
-          className="border border-grid rounded-lg px-3 py-1.5 text-sm bg-white">
+          className="border border-grid rounded-xl px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition">
           <option value="">All topics</option>
           {topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
-        <div className="flex rounded-lg border border-grid overflow-hidden">
+        <div className="flex rounded-xl border border-grid overflow-hidden">
           {[7, 30, 90].map((d) => (
-            <button key={d} onClick={() => setDays(d)} className={`px-3 py-1.5 text-sm ${days === d ? 'bg-ink text-white' : 'bg-white'}`}>{d}d</button>
+            <button key={d} onClick={() => setDays(d)} className={`px-3 py-1.5 text-sm transition ${days === d ? 'bg-ink text-white' : 'bg-white hover:bg-plane'}`}>{d}d</button>
           ))}
         </div>
         <button onClick={() => download(`/reports/pdf?days=${days}${topicId ? `&topic_id=${topicId}` : ''}`, 'crawlops-report.pdf')}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border bg-white border-grid active:scale-[0.98]" title="Export PDF report">
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm border bg-white border-grid hover:bg-plane active:scale-[0.98] transition" title="Export PDF report">
           <IconFileText size={15} stroke={2} /><span className="hidden sm:inline">PDF</span>
         </button>
       </div>
@@ -186,7 +186,7 @@ export default function Analytics({ view = 'overview' }: { view?: AnalyticsView 
       <div className={usesExplore ? 'lg:grid lg:grid-cols-[240px_1fr] lg:gap-5' : ''}>
         {usesExplore && (
           <aside className={`${railOpen ? 'block' : 'hidden'} lg:block mb-4 lg:mb-0`}>
-            <div className="bg-white border border-grid rounded-2xl p-3 lg:sticky lg:top-4">
+            <div className="bg-white border border-grid rounded-2xl shadow-card p-3 lg:sticky lg:top-4">
               <div className="flex items-center mb-2">
                 <span className="text-sm font-semibold">Cross-filter</span>
                 {activeCount > 0 && (
@@ -235,7 +235,7 @@ export default function Analytics({ view = 'overview' }: { view?: AnalyticsView 
                       <PlatformIcon platform={p.value} size={14} />
                       <span className="w-20 truncate text-inksec">{b?.label || p.value}</span>
                       <div className="flex-1 h-2 rounded-full bg-grid overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${(p.count / max) * 100}%`, background: b?.color || '#64748b' }} />
+                        <div className="h-full rounded-full" style={{ width: `${(p.count / max) * 100}%`, background: b?.color || '#898781' }} />
                       </div>
                       <span className="tabular-nums text-xs text-inksec w-10 text-right">{p.count}</span>
                     </div>
@@ -256,7 +256,7 @@ export default function Analytics({ view = 'overview' }: { view?: AnalyticsView 
                       {Object.entries(health.components || {}).map(([k, v]: any) => (
                         <div key={k}>
                           <div className="flex justify-between text-xs mb-0.5"><span className="capitalize text-inksec">{k}</span><span className="tabular-nums">{v}</span></div>
-                          <div className="h-1.5 rounded-full bg-grid overflow-hidden"><div className="h-full rounded-full" style={{ width: `${v}%`, background: '#2a78d6' }} /></div>
+                          <div className="h-1.5 rounded-full bg-grid overflow-hidden"><div className="h-full rounded-full bg-accent" style={{ width: `${v}%` }} /></div>
                         </div>
                       ))}
                       <div className="pt-1"><Sparkline data={health.spark || []} /></div>
@@ -272,7 +272,7 @@ export default function Analytics({ view = 'overview' }: { view?: AnalyticsView 
                       {Object.entries(crisis.drivers || {}).map(([k, v]: any) => (
                         <div key={k}>
                           <div className="flex justify-between text-xs mb-0.5"><span className="capitalize text-inksec">{k === 'negative' ? 'negative share' : k}</span><span className="tabular-nums">{v}</span></div>
-                          <div className="h-1.5 rounded-full bg-grid overflow-hidden"><div className="h-full rounded-full" style={{ width: `${(v / (k === 'negative' ? 50 : k === 'spike' ? 30 : 20)) * 100}%`, background: '#d03b3b' }} /></div>
+                          <div className="h-1.5 rounded-full bg-grid overflow-hidden"><div className="h-full rounded-full bg-danger" style={{ width: `${(v / (k === 'negative' ? 50 : k === 'spike' ? 30 : 20)) * 100}%` }} /></div>
                         </div>
                       ))}
                       <div className="text-[11px] text-muted pt-1">{crisis.neg_share_48h}% negative in 48h · spike x{crisis.spike_ratio}</div>
@@ -435,7 +435,7 @@ export default function Analytics({ view = 'overview' }: { view?: AnalyticsView 
                     <div key={i} className="flex items-center gap-2 text-sm">
                       <span className="w-52 truncate">{t.label}</span>
                       <div className="flex-1 h-2 rounded-full bg-grid overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${t.share}%`, background: '#4a3aa7' }} />
+                        <div className="h-full rounded-full bg-accent" style={{ width: `${t.share}%` }} />
                       </div>
                       <span className="tabular-nums text-xs text-inksec w-10 text-right">{t.share}%</span>
                     </div>
@@ -480,7 +480,7 @@ export default function Analytics({ view = 'overview' }: { view?: AnalyticsView 
                     <div key={n.id} className="flex items-center gap-2 p-2 rounded-lg border border-grid">
                       <PlatformIcon platform={n.platform} size={16} />
                       <div className="min-w-0"><div className="text-sm font-medium truncate">{n.id}</div><div className="text-[11px] text-muted">{n.posts} posts · {fmtNum(n.engagement)} eng</div></div>
-                      <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded-full font-semibold shrink-0 ${n.tier === 'mega' ? 'bg-[#4a3aa7]/15 text-[#4a3aa7]' : n.tier === 'macro' ? 'bg-[#2a78d6]/15 text-[#2a78d6]' : 'bg-grid text-inksec'}`}>{n.tier}</span>
+                      <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded-full font-semibold shrink-0 ${n.tier === 'mega' ? 'bg-accent text-white' : n.tier === 'macro' ? 'bg-accent/15 text-accent' : 'bg-grid text-inksec'}`}>{n.tier}</span>
                     </div>
                   ))}
                 </div>
@@ -492,12 +492,12 @@ export default function Analytics({ view = 'overview' }: { view?: AnalyticsView 
                 <div className="space-y-2">
                   {narratives.narratives.map((n: any, i: number) => (
                     <div key={i} className="flex items-start gap-2 p-2.5 rounded-lg border border-grid">
-                      {n.coordinated && <IconAlertHexagon size={16} className="text-[#d03b3b] shrink-0 mt-0.5" />}
+                      {n.coordinated && <IconAlertHexagon size={16} className="text-danger shrink-0 mt-0.5" />}
                       <div className="min-w-0">
                         <div className="text-sm truncate">{n.sample}</div>
                         <div className="text-[11px] text-muted mt-0.5">
                           {n.accounts} accounts · {n.posts} posts · {(n.platforms || []).join(', ')}
-                          {n.coordinated && <span className="text-[#d03b3b] font-medium"> · coordinated</span>}
+                          {n.coordinated && <span className="text-danger font-medium"> · coordinated</span>}
                         </div>
                       </div>
                     </div>
@@ -522,7 +522,7 @@ export default function Analytics({ view = 'overview' }: { view?: AnalyticsView 
                       </div>
                     </div>
                   )
-              ) : <div className="text-muted text-sm py-10 text-center">Loading…</div>}
+              ) : <div className="py-16 grid place-items-center"><span className="w-6 h-6 rounded-full border-2 border-grid border-t-accent animate-spin" /></div>}
             </Panel>
 
             <Panel title="Cause and effect" right={<span className="inline-flex items-center gap-1 text-xs text-muted"><IconSparkles size={12} stroke={2} />AI</span>}>

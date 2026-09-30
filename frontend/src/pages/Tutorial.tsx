@@ -79,7 +79,7 @@ const WALKTHROUGH: Section[] = [
     intro: 'News, Mastodon, Bluesky, Reddit, Wikipedia and others need no login. Facebook, Instagram, TikTok, X and Threads are login-walled — the crawler must be signed in as a real account. Two ways to connect one:',
     steps: [
       { n: 1, title: 'Option A — Log in inside CrawlOps', body: 'Sources → stealth sessions → "Log in here". A live anti-detect browser opens the real login page inside CrawlOps; click and type your credentials (and 2FA / CAPTCHA) on it, then Save session. Nothing is stored except the resulting session.', tip: 'Easiest — no browser extension needed.' },
-      { n: 2, title: 'Option B — Browser extension', body: 'Load browser-extension/ (chrome://extensions → Load unpacked), paste your API token, log into the platform in your own browser, then click the extension → Send session.' },
+      { n: 2, title: 'Option B — Browser extension', body: 'Settings → Browser extension → Download extension (.zip) — one click — then unzip it. Open chrome://extensions, turn on Developer mode → Load unpacked → pick the unzipped folder. Paste your API token, log into the platform in your own browser, then click the extension → Send session.' },
       { n: 3, title: 'Add a proxy', body: 'Sources → proxy pool → add a residential proxy. Even logged in, a datacenter IP gets challenged. Use dedicated accounts, not personal ones.' },
       { n: 4, title: 'Crawl', body: 'Once a session shows "cookies set", the crawler browses that platform logged-in on the topic\'s next cycle.' },
     ],
@@ -131,8 +131,8 @@ export default function Tutorial() {
   return (
     <div>
       <div className="mb-4">
-        <h2 className="font-semibold text-lg">Tutorial</h2>
-        <p className="text-sm text-inksec">What CrawlOps is, what it does, and how to use every part of it.</p>
+        <h1 className="text-lg font-bold tracking-tight">Tutorial</h1>
+        <p className="text-[13px] text-inksec mt-0.5">What CrawlOps is, what it does, and how to use every part of it.</p>
       </div>
 
       <div className="lg:grid lg:grid-cols-[220px_1fr] lg:gap-6">
@@ -143,7 +143,7 @@ export default function Tutorial() {
               ${active === 'overview' ? 'bg-ink text-white' : 'text-inksec hover:bg-white'}`}>
             <IconHome size={16} stroke={2} className="shrink-0" />Overview
           </button>
-          <div className="hidden lg:block text-[10px] font-semibold uppercase tracking-wider text-muted px-3 pt-3 pb-1">Walkthrough</div>
+          <div className="hidden lg:block text-[11px] font-semibold uppercase tracking-[0.09em] text-muted px-3 pt-3 pb-1">Walkthrough</div>
           {WALKTHROUGH.map(({ key, label, Icon }) => (
             <button key={key} onClick={() => setActive(key)}
               className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition
@@ -159,7 +159,7 @@ export default function Tutorial() {
             <div className="space-y-5">
               {/* hero */}
               <div className="bg-ink text-white rounded-2xl p-6 lg:p-8">
-                <div className="flex items-center gap-2 text-[#8fb8ec] text-sm font-medium mb-2">
+                <div className="flex items-center gap-2 text-accent-soft text-sm font-medium mb-2">
                   <IconAntenna size={18} stroke={2} /> CrawlOps
                 </div>
                 <h1 className="text-2xl lg:text-3xl font-bold tracking-tight leading-tight max-w-2xl">
@@ -176,7 +176,7 @@ export default function Tutorial() {
                 <h3 className="font-semibold mb-3">What it does</h3>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {CAPABILITIES.map(({ Icon, title, body }) => (
-                    <div key={title} className="bg-white border border-grid rounded-2xl p-4">
+                    <div key={title} className="bg-white border border-grid rounded-2xl shadow-card p-4">
                       <span className="w-9 h-9 rounded-xl bg-plane grid place-items-center mb-2">
                         <Icon size={18} stroke={2} className="text-ink" />
                       </span>
@@ -188,14 +188,14 @@ export default function Tutorial() {
               </div>
 
               {/* how it works — flow */}
-              <div className="bg-white border border-grid rounded-2xl p-5">
+              <div className="bg-white border border-grid rounded-2xl shadow-card p-5">
                 <h3 className="font-semibold mb-1">How it works</h3>
                 <p className="text-sm text-inksec mb-3">The pipeline every post travels through, end to end.</p>
                 <FlowDiagram />
               </div>
 
               {/* quick start */}
-              <div className="bg-white border border-grid rounded-2xl p-5">
+              <div className="bg-white border border-grid rounded-2xl shadow-card p-5">
                 <h3 className="font-semibold mb-3">Start in 3 steps</h3>
                 <ol className="grid sm:grid-cols-3 gap-3">
                   {[
@@ -211,14 +211,14 @@ export default function Tutorial() {
                   ))}
                 </ol>
                 <button onClick={() => setActive('start')}
-                  className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-ink text-white text-sm active:scale-[0.98]">
+                  className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-ink text-white text-sm hover:brightness-110 active:scale-[0.98] transition">
                   <IconRocket size={15} stroke={2} />Open the walkthrough
                 </button>
               </div>
             </div>
           ) : section && (
             <>
-              <div className="bg-white border border-grid rounded-2xl p-5 lg:p-6">
+              <div className="bg-white border border-grid rounded-2xl shadow-card p-5 lg:p-6">
                 <div className="flex items-center gap-3 mb-2">
                   <span className="w-10 h-10 rounded-xl bg-ink grid place-items-center shrink-0">
                     <section.Icon size={20} color="#fcfcfb" stroke={2} />
@@ -241,7 +241,7 @@ export default function Tutorial() {
                       <div className="min-w-0">
                         <div className="font-medium text-sm">{s.title}</div>
                         <p className="text-sm text-inksec leading-relaxed mt-0.5">{s.body}</p>
-                        {s.tip && <div className="mt-1.5 text-[13px] text-[#006300] bg-[#0ca30c]/8 border border-[#0ca30c]/20 rounded-lg px-2.5 py-1.5">Tip: {s.tip}</div>}
+                        {s.tip && <div className="mt-1.5 text-[13px] text-positive bg-positive/10 border border-positive/20 rounded-lg px-2.5 py-1.5">Tip: {s.tip}</div>}
                       </div>
                     </li>
                   ))}
@@ -250,10 +250,10 @@ export default function Tutorial() {
 
               <div className="flex justify-between mt-4">
                 <button onClick={() => { const i = WALKTHROUGH.findIndex((s) => s.key === active); setActive(i > 0 ? WALKTHROUGH[i - 1].key : 'overview') }}
-                  className="px-4 py-2 rounded-xl text-sm border border-grid bg-white">Previous</button>
+                  className="px-4 py-2 rounded-xl text-sm border border-grid bg-white hover:bg-plane transition">Previous</button>
                 <button onClick={() => { const i = WALKTHROUGH.findIndex((s) => s.key === active); if (i < WALKTHROUGH.length - 1) setActive(WALKTHROUGH[i + 1].key) }}
                   disabled={WALKTHROUGH[WALKTHROUGH.length - 1].key === active}
-                  className="px-4 py-2 rounded-xl text-sm bg-ink text-white disabled:opacity-40">Next</button>
+                  className="px-4 py-2 rounded-xl text-sm bg-ink text-white hover:brightness-110 active:scale-[0.99] transition disabled:opacity-40">Next</button>
               </div>
             </>
           )}

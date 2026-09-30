@@ -42,43 +42,43 @@ export default function DataExplorer() {
     <div>
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <div className="mr-auto">
-          <h2 className="font-semibold text-lg">Data Explorer</h2>
-          <p className="text-sm text-inksec">Slice the aggregate data any way you like — pick a dimension, a measure, and a chart.</p>
+          <h1 className="text-lg font-bold tracking-tight">Data Explorer</h1>
+          <p className="text-[13px] text-inksec mt-0.5">Slice the aggregate data any way you like — pick a dimension, a measure, and a chart.</p>
         </div>
         <select value={topicId} onChange={(e) => setTopicId(e.target.value ? Number(e.target.value) : '')}
-          className="border border-grid rounded-lg px-3 py-1.5 text-sm bg-white">
+          className="border border-grid rounded-xl px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition">
           <option value="">All topics</option>
           {topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
-        <div className="flex rounded-lg border border-grid overflow-hidden">
+        <div className="flex rounded-xl border border-grid overflow-hidden">
           {[7, 30, 90].map((d) => (
-            <button key={d} onClick={() => setDays(d)} className={`px-3 py-1.5 text-sm ${days === d ? 'bg-ink text-white' : 'bg-white'}`}>{d}d</button>
+            <button key={d} onClick={() => setDays(d)} className={`px-3 py-1.5 text-sm transition ${days === d ? 'bg-ink text-white' : 'bg-white hover:bg-plane'}`}>{d}d</button>
           ))}
         </div>
         <a href={`${location.protocol}//${location.hostname}:8405`} target="_blank" rel="noreferrer"
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border bg-white border-grid" title="Open Metabase (full BI dashboards)">
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm border bg-white border-grid hover:bg-plane transition" title="Open Metabase (full BI dashboards)">
           <IconExternalLink size={15} stroke={2} /><span className="hidden sm:inline">Full BI</span>
         </a>
       </div>
 
-      <div className="bg-white border border-grid rounded-2xl p-4 mb-4">
+      <div className="bg-white border border-grid rounded-2xl shadow-card p-4 mb-4">
         <div className="flex flex-wrap items-end gap-4">
           <label className="text-sm">Group by (dimension)
             <select value={dimension} onChange={(e) => setDimension(e.target.value)}
-              className="block mt-1 border border-grid rounded-lg px-2 py-1.5 text-sm capitalize">
+              className="block mt-1 border border-grid rounded-xl px-2 py-1.5 text-sm capitalize bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition">
               {DIMENSIONS.map((d) => <option key={d} value={d}>{d}</option>)}
             </select>
           </label>
           <label className="text-sm">Measure
             <select value={measure} onChange={(e) => setMeasure(e.target.value)}
-              className="block mt-1 border border-grid rounded-lg px-2 py-1.5 text-sm">
+              className="block mt-1 border border-grid rounded-xl px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition">
               {MEASURES.map(([m, l]) => <option key={m} value={m}>{l}</option>)}
             </select>
           </label>
           <div className="flex gap-1 ml-auto">
             {[['bar', IconChartBar], ['line', IconChartLine], ['pie', IconChartPie], ['table', IconTable]].map(([k, Ic]: any) => (
               <button key={k} onClick={() => setChart(k)} title={k}
-                className={`p-2 rounded-lg border ${chart === k ? 'bg-ink text-white border-ink' : 'bg-white border-grid text-inksec'}`}>
+                className={`p-2 rounded-xl border transition ${chart === k ? 'bg-ink text-white border-ink' : 'bg-white border-grid text-inksec hover:bg-plane'}`}>
                 <Ic size={16} stroke={2} />
               </button>
             ))}
@@ -86,11 +86,17 @@ export default function DataExplorer() {
         </div>
       </div>
 
-      <div className="bg-white border border-grid rounded-2xl p-4">
+      <div className="bg-white border border-grid rounded-2xl shadow-card p-4">
         <div className="text-sm text-inksec mb-3">{measureLabel} by {dimension} · {rows.length} groups · total {fmtNum(total)}</div>
-        {loading ? <div className="text-muted text-sm py-16 text-center">Loading…</div>
-          : !rows.length ? <div className="text-muted text-sm py-16 text-center">No data for this slice.</div>
+        {loading ? <div className="py-16 grid place-items-center"><span className="w-6 h-6 rounded-full border-2 border-grid border-t-accent animate-spin" /></div>
+          : !rows.length ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <IconChartBar size={28} stroke={1.5} className="text-muted mb-2" />
+              <div className="text-muted text-sm">No data for this slice.</div>
+            </div>
+          )
           : chart === 'table' ? (
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="text-xs text-muted text-left"><th className="font-normal pb-1 capitalize">{dimension}</th><th className="font-normal text-right">{measureLabel}</th></tr></thead>
               <tbody>
@@ -102,6 +108,7 @@ export default function DataExplorer() {
                 ))}
               </tbody>
             </table>
+            </div>
           ) : chart === 'pie' ? (
             <ResponsiveContainer width="100%" height={340}>
               <PieChart>
