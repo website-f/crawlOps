@@ -1,6 +1,7 @@
 import { IconArrowBigDown, IconArrowBigUp, IconDeviceFloppy, IconLayoutDashboard, IconPlus, IconTrash, IconX } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
 import { PlatformIcon } from '../components/PlatformIcon'
+import { useDialog } from '../components/ui/overlays'
 import { del, fmtNum, get, post, put } from '../lib/api'
 import { SENTIMENT } from '../lib/platform'
 
@@ -18,6 +19,7 @@ const CATALOG: { type: string; title: string }[] = [
 ]
 
 export default function Dashboards() {
+  const dialog = useDialog()
   const [dashes, setDashes] = useState<Dash[]>([])
   const [cur, setCur] = useState<Dash | null>(null)
   const [topics, setTopics] = useState<{ id: number; name: string }[]>([])
@@ -41,9 +43,9 @@ export default function Dashboards() {
   }, [topicId, days])
 
   const newDash = async () => {
-    const name = prompt('Dashboard name:'); if (!name) return
+    const name = await dialog.prompt({ title: 'New dashboard', label: 'Name', placeholder: 'e.g. Brand health' }); if (!name) return
     const d = await post<Dash>('/dashboards', { name, widgets: CATALOG.slice(0, 4).map((w, i) => ({ id: `w${i}${Date.now()}`, ...w })) })
-    await loadDashes(); setCur(d); setDirty(false)
+    await loadDashes(); setCur(d); setDirty(false); dialog.toast('Dashboard created', 'success')
   }
   const saveDash = async () => {
     if (!cur) return
@@ -51,8 +53,9 @@ export default function Dashboards() {
     setDirty(false); loadDashes()
   }
   const removeDash = async () => {
-    if (!cur || !confirm(`Delete dashboard "${cur.name}"?`)) return
-    await del(`/dashboards/${cur.id}`); setCur(null); loadDashes()
+    if (!cur) return
+    if (!(await dialog.confirm({ title: 'Delete dashboard', message: `"${cur.name}" and its layout will be removed.`, variant: 'danger', confirmText: 'Delete' }))) return
+    await del(`/dashboards/${cur.id}`); setCur(null); loadDashes(); dialog.toast('Dashboard deleted')
   }
   const addWidget = (w: { type: string; title: string }) => {
     if (!cur) return
@@ -69,7 +72,7 @@ export default function Dashboards() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 flex-wrap">
-        <IconLayoutDashboard size={20} stroke={2} className="text-[#2a78d6]" />
+        <IconLayoutDashboard size={20} stroke={2} className="text-accent" />
         <select value={cur?.id ?? ''} onChange={(e) => setCur(dashes.find((d) => d.id === Number(e.target.value)) || null)}
           className="border border-grid rounded-xl px-3 py-2 text-sm bg-white">
           <option value="">Select dashboard…</option>
@@ -97,7 +100,7 @@ export default function Dashboards() {
               className={`ml-auto inline-flex items-center gap-1 px-3 py-2 rounded-xl text-sm ${dirty ? 'bg-ink text-white' : 'border border-grid bg-white text-muted'}`}>
               <IconDeviceFloppy size={15} stroke={2} />{dirty ? 'Save' : 'Saved'}
             </button>
-            <button onClick={removeDash} className="inline-flex items-center gap-1 px-3 py-2 rounded-xl text-sm border border-grid bg-white text-red-700"><IconTrash size={15} stroke={2} /></button>
+            <button onClick={removeDash} className="inline-flex items-center gap-1 px-3 py-2 rounded-xl text-sm border border-grid bg-white text-danger hover:bg-danger/5 transition"><IconTrash size={15} stroke={2} /></button>
           </>
         )}
       </div>
@@ -181,7 +184,7 @@ function WidgetBody({ type, ov, trend, authors }: { type: string; ov: any; trend
         {rows.slice(0, 7).map((r: any) => (
           <div key={r.platform} className="flex items-center gap-2 text-xs">
             <span className="w-20 truncate capitalize inline-flex items-center gap-1"><PlatformIcon platform={r.platform} size={13} />{r.platform}</span>
-            <div className="flex-1 h-2 bg-plane rounded-full overflow-hidden"><div className="h-full bg-[#2a78d6]" style={{ width: `${(100 * r.count) / max}%` }} /></div>
+            <div className="flex-1 h-2 bg-plane rounded-full overflow-hidden"><div className="h-full bg-accent" style={{ width: `${(100 * r.count) / max}%` }} /></div>
             <span className="tabular-nums text-muted w-10 text-right">{fmtNum(r.count)}</span>
           </div>
         ))}

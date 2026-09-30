@@ -79,34 +79,42 @@ const ALL_ITEMS = GROUPS.flatMap((g) => g.items)
 
 function Brand() {
   return (
-    <div className="flex items-center gap-2">
-      <span className="w-7 h-7 rounded-lg bg-ink grid place-items-center">
-        <IconAntenna size={16} color="#fcfcfb" stroke={2} />
+    <div className="flex items-center gap-2.5">
+      <span className="w-8 h-8 rounded-xl bg-ink grid place-items-center shadow-raise">
+        <IconAntenna size={17} color="#fcfcfb" stroke={2} />
       </span>
-      <span className="font-bold text-[17px] tracking-tight">Crawl<span className="text-[#2a78d6]">Ops</span></span>
+      <span className="font-bold text-[17px] tracking-tight leading-none">Crawl<span className="text-accent">Ops</span></span>
     </div>
   )
 }
 
 function NavItems({ onNavigate, onLogout }: { onNavigate?: () => void; onLogout: () => void }) {
   return (
-    <nav className="p-2 flex flex-col h-full overflow-y-auto">
+    <nav className="px-2.5 py-2 flex flex-col h-full overflow-y-auto">
       {GROUPS.map((g) => (
-        <div key={g.label} className="mb-1">
-          <div className="px-3 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">{g.label}</div>
+        <div key={g.label} className="mb-0.5">
+          <div className="px-3 pt-4 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.09em] text-muted">{g.label}</div>
           {g.items.map(({ to, label, Icon }) => (
             <NavLink key={to} to={to} end={to === '/' || to === '/analytics'} onClick={onNavigate}
               className={({ isActive }) =>
-                `flex items-center gap-2.5 px-3 py-1.5 rounded-xl text-[13px] font-medium transition
-                 ${isActive ? 'bg-ink text-white' : 'text-inksec hover:bg-plane'}`}>
-              <Icon size={16} stroke={2} className="shrink-0" />{label}
+                `group relative flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] transition-colors
+                 ${isActive
+                   ? 'bg-accent/10 text-accent-ink font-semibold'
+                   : 'text-inksec font-medium hover:bg-plane hover:text-ink'}`}>
+              {({ isActive }) => (
+                <>
+                  {isActive && <span className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[3px] rounded-r-full bg-accent" />}
+                  <Icon size={16.5} stroke={2} className={`shrink-0 ${isActive ? '' : 'text-muted group-hover:text-inksec'}`} />
+                  <span className="truncate">{label}</span>
+                </>
+              )}
             </NavLink>
           ))}
         </div>
       ))}
       <button onClick={onLogout}
-        className="mt-auto flex items-center gap-2.5 px-3 py-2 rounded-xl text-[13px] font-medium text-inksec hover:bg-plane">
-        <IconLogout size={16} stroke={2} />Sign out
+        className="mt-3 mb-1 flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium text-inksec hover:bg-danger/5 hover:text-danger transition-colors">
+        <IconLogout size={16.5} stroke={2} />Sign out
       </button>
     </nav>
   )
@@ -121,34 +129,38 @@ function Shell() {
 
   return (
     <div className="min-h-[100dvh] bg-plane text-ink lg:flex">
-      <aside className="hidden lg:flex w-56 shrink-0 border-r border-grid bg-white flex-col sticky top-0 h-[100dvh]">
-        <div className="px-4 py-4 border-b border-grid"><Brand /></div>
+      <aside className="hidden lg:flex w-60 shrink-0 border-r border-grid bg-surface flex-col sticky top-0 h-[100dvh]">
+        <div className="px-4 h-16 flex items-center border-b border-grid"><Brand /></div>
         <NavItems onLogout={logout} />
       </aside>
 
-      <header className="lg:hidden sticky top-0 z-40 flex items-center gap-3 px-4 h-14 bg-white border-b border-grid">
-        <button onClick={() => setDrawer(true)} aria-label="Open menu" className="p-1.5 -ml-1.5 rounded-lg hover:bg-plane active:scale-[0.96]">
+      <header className="lg:hidden sticky top-0 z-40 flex items-center gap-3 px-4 h-14 bg-surface/90 backdrop-blur border-b border-grid">
+        <button onClick={() => setDrawer(true)} aria-label="Open menu" className="p-1.5 -ml-1.5 rounded-lg hover:bg-plane active:scale-[0.96] transition">
           <IconMenu2 size={20} stroke={2} />
         </button>
         <Brand />
-        <span className="ml-auto text-sm text-inksec truncate max-w-[45%]">{current}</span>
+        <span className="ml-auto text-[13px] font-medium text-inksec truncate max-w-[45%]">{current}</span>
       </header>
 
       {drawer && (
         <div className="lg:hidden fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-ink/30" onClick={() => setDrawer(false)} />
-          <div className="absolute inset-y-0 left-0 w-64 bg-white shadow-xl flex flex-col">
-            <div className="flex items-center justify-between px-4 py-4 border-b border-grid">
+          <div className="absolute inset-0 bg-ink/40 backdrop-blur-[2px] animate-[fade_.15s_ease-out]" onClick={() => setDrawer(false)} />
+          <div className="absolute inset-y-0 left-0 w-[17rem] max-w-[82vw] bg-surface shadow-float flex flex-col animate-[drawerin_.22s_cubic-bezier(.16,1,.3,1)]">
+            <div className="flex items-center justify-between px-4 h-16 border-b border-grid">
               <Brand />
-              <button onClick={() => setDrawer(false)} aria-label="Close menu" className="p-1.5 rounded-lg hover:bg-plane"><IconX size={18} stroke={2} /></button>
+              <button onClick={() => setDrawer(false)} aria-label="Close menu" className="p-1.5 rounded-lg hover:bg-plane transition"><IconX size={18} stroke={2} /></button>
             </div>
             <div className="flex-1 overflow-hidden"><NavItems onNavigate={() => setDrawer(false)} onLogout={logout} /></div>
           </div>
         </div>
       )}
 
-      <main className="flex-1 min-w-0 p-4 lg:p-6 max-w-[1500px] w-full mx-auto lg:mx-0">
-        <Suspense fallback={<div className="py-20 grid place-items-center text-muted">Loading…</div>}>
+      <main className="flex-1 min-w-0 p-4 sm:p-5 lg:p-7 max-w-[1500px] w-full mx-auto lg:mx-0">
+        <Suspense fallback={
+          <div className="py-24 grid place-items-center">
+            <span className="w-7 h-7 rounded-full border-2 border-grid border-t-accent animate-spin" />
+          </div>
+        }>
         <Routes>
           <Route path="/" element={<Feed />} />
           <Route path="/search" element={<Search />} />
@@ -194,7 +206,11 @@ export default function App() {
     if (authed === true && location.pathname === '/login') navigate('/')
   }, [authed, location.pathname])
 
-  if (authed === null) return <div className="min-h-[100dvh] grid place-items-center text-muted">Loading…</div>
+  if (authed === null) return (
+    <div className="min-h-[100dvh] grid place-items-center bg-plane">
+      <span className="w-7 h-7 rounded-full border-2 border-grid border-t-accent animate-spin" />
+    </div>
+  )
 
   return (
     <Routes>

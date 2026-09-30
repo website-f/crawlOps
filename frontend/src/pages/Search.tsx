@@ -45,7 +45,7 @@ export default function Search() {
     <div className="space-y-5 max-w-3xl mx-auto">
       <div>
         <div className="flex items-center gap-2">
-          <IconSparkles size={20} stroke={2} className="text-[#7c3aed]" />
+          <IconSparkles size={20} stroke={2} className="text-accent" />
           <h1 className="text-lg font-bold">Semantic search</h1>
         </div>
         <p className="text-sm text-muted mt-1">
@@ -114,7 +114,7 @@ export default function Search() {
 
       {similarId && (
         <div className="flex items-center gap-2 text-sm text-inksec">
-          <IconSparkles size={15} stroke={2} className="text-[#7c3aed]" />
+          <IconSparkles size={15} stroke={2} className="text-accent" />
           Showing posts similar to <span className="font-mono">#{similarId}</span>
           <button onClick={() => { setParams({}); setHits([]); setRan(false) }}
             className="text-[#2a78d6] hover:underline">clear</button>
@@ -136,7 +136,7 @@ export default function Search() {
           {hits.map((p) => (
             <div key={p.id} className="relative break-inside-avoid">
               {p.score != null && (
-                <span className="absolute z-10 top-2 right-2 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#7c3aed] text-white shadow">
+                <span className="absolute z-10 top-2 right-2 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-accent text-white shadow">
                   {Math.round(p.score * 100)}% match
                 </span>
               )}

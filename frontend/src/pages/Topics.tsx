@@ -1,5 +1,6 @@
 import { IconPencil, IconPlayerPlay, IconSparkles, IconTrash } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
+import { useDialog } from '../components/ui/overlays'
 import { del, get, post, put } from '../lib/api'
 import { FEED_TABS } from '../lib/platform'
 
@@ -12,6 +13,7 @@ interface Topic {
 const EMPTY = { name: '', query: '', criteria: '', threshold: 55, langs: [], platforms: [], schedule_minutes: 30, active: true }
 
 export default function Topics() {
+  const dialog = useDialog()
   const [topics, setTopics] = useState<Topic[]>([])
   const [form, setForm] = useState<any>(EMPTY)
   const [editing, setEditing] = useState<number | null>(null)
@@ -137,16 +139,16 @@ export default function Topics() {
                 <IconPencil size={13} stroke={2} />Edit
               </button>
               <button onClick={async () => {
-                if (!confirm(`Delete ALL fetched results for "${t.name}"? The topic stays; only its posts + cached media are removed.`)) return
+                if (!(await dialog.confirm({ title: 'Clear fetched results', message: `Remove every fetched post and cached media for "${t.name}". The topic itself stays and will keep crawling.`, confirmText: 'Clear results' }))) return
                 const r = await post<{ deleted: number }>('/posts/delete', { topic_id: t.id })
-                alert(`Cleared ${r.deleted} posts.`); reload()
+                dialog.toast(`Cleared ${r.deleted} posts`, 'success'); reload()
               }} className="inline-flex items-center gap-1 text-[#b45309] active:scale-[0.97]">
                 <IconTrash size={13} stroke={2} />Clear results
               </button>
-              <button onClick={() => {
-                if (!confirm(`Delete topic "${t.name}" AND all its data (posts, media, clusters, alerts)? This cannot be undone.`)) return
-                del(`/topics/${t.id}`).then(reload)
-              }} className="inline-flex items-center gap-1 text-red-700 active:scale-[0.97]">
+              <button onClick={async () => {
+                if (!(await dialog.confirm({ title: 'Delete topic', message: `"${t.name}" and all of its data — posts, media, clusters and alerts — will be permanently removed. This cannot be undone.`, variant: 'danger', confirmText: 'Delete topic' }))) return
+                await del(`/topics/${t.id}`); reload(); dialog.toast('Topic deleted')
+              }} className="inline-flex items-center gap-1 text-danger active:scale-[0.97]">
                 <IconTrash size={13} stroke={2} />Delete topic
               </button>
             </div>

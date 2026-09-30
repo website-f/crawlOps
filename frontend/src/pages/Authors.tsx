@@ -54,7 +54,7 @@ export default function Authors() {
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-lg font-bold">{profile.identity.display || profile.identity.name || profile.identity.handle}</h1>
             {profile.cross_platform && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#7c3aed]/10 text-[#7c3aed]">
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-accent/10 text-accent">
                 <IconWorld size={12} stroke={2} />posts on {profile.totals.platforms} platforms
               </span>
             )}

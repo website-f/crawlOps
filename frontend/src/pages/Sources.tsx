@@ -2,6 +2,7 @@ import { IconAlertTriangle, IconCheck, IconInfoCircle, IconLogin2, IconPlugConne
 import { useEffect, useState } from 'react'
 import LoginBrowser from '../components/LoginBrowser'
 import { PlatformBadge } from '../components/PlatformIcon'
+import { useDialog } from '../components/ui/overlays'
 import { del, get, post, put } from '../lib/api'
 
 interface CredField {
@@ -106,7 +107,7 @@ interface Source {
 }
 
 const METHOD_BADGE: Record<string, { label: string; cls: string }> = {
-  login: { label: 'Login', cls: 'bg-[#7c3aed]/10 text-[#5b21b6]' },
+  login: { label: 'Login', cls: 'bg-accent/10 text-accent-ink' },
   api: { label: 'API key', cls: 'bg-[#2a78d6]/10 text-[#1e4e8c]' },
   watchlist: { label: 'Watchlist · free', cls: 'bg-[#0ca30c]/10 text-[#006300]' },
   config: { label: 'Setup', cls: 'bg-[#fab219]/15 text-[#7a5200]' },
@@ -126,6 +127,7 @@ const ACCOUNT_LABEL: Record<string, string> = {
 }
 
 export default function Sources() {
+  const dialog = useDialog()
   const [sources, setSources] = useState<Source[]>([])
   const [runs, setRuns] = useState<Run[]>([])
   const [proxies, setProxies] = useState<Proxy[]>([])
@@ -344,8 +346,8 @@ export default function Sources() {
                 try {
                   const cookies = JSON.parse(cookieJson)
                   await post(`/sources/stealth-sessions/${cookieTarget}/cookies`, { cookies })
-                  setCookieTarget(null); reload()
-                } catch { alert('Invalid JSON or camofox not running (start with --profile stealth)') }
+                  setCookieTarget(null); reload(); dialog.toast('Cookies imported', 'success')
+                } catch { dialog.toast('Invalid JSON, or camofox is not running (start with --profile stealth)', 'error') }
               }} className="px-4 py-1.5 rounded-lg bg-ink text-white text-sm">Import</button>
             </div>
           </div>

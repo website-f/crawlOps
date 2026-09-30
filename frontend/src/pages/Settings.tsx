@@ -1,5 +1,6 @@
 import { IconCopy, IconDeviceFloppy, IconPuzzle, IconSend, IconTrash, IconUserPlus } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
+import { useDialog } from '../components/ui/overlays'
 import { del, get, getToken, post, put } from '../lib/api'
 
 interface AllSettings {
@@ -13,6 +14,7 @@ interface AllSettings {
 interface AppUser { id: number; username: string; role: string }
 
 export default function Settings() {
+  const dialog = useDialog()
   const [s, setS] = useState<AllSettings | null>(null)
   const [saved, setSaved] = useState('')
   const [testResult, setTestResult] = useState('')
@@ -290,7 +292,7 @@ export default function Settings() {
               className="border border-grid rounded-lg px-2 py-1.5 text-sm">
               <option value="admin">admin</option><option value="analyst">analyst</option><option value="viewer">viewer</option>
             </select>
-            <button onClick={() => post('/auth/users', nu).then(() => { setNu({ username: '', password: '', role: 'analyst' }); reloadUsers() }).catch((e) => alert(String(e.message)))}
+            <button onClick={() => post('/auth/users', nu).then(() => { setNu({ username: '', password: '', role: 'analyst' }); reloadUsers(); dialog.toast('User added', 'success') }).catch((e) => dialog.toast(String(e.message), 'error'))}
               className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-ink text-white text-sm active:scale-[0.98]">
               <IconUserPlus size={14} stroke={2} />Add user
             </button>

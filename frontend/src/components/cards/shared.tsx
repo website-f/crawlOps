@@ -51,7 +51,7 @@ export function Avatar({ src, name, size = 40, round = true }: { src?: string; n
       style={{ width: size, height: size }}
       onError={(e) => ((e.target as HTMLImageElement).style.display = 'none')} />
   ) : (
-    <div className={`${round ? 'rounded-full' : 'rounded-lg'} shrink-0 grid place-items-center bg-slate-200 text-slate-600 font-semibold`}
+    <div className={`${round ? 'rounded-full' : 'rounded-lg'} shrink-0 grid place-items-center bg-grid text-inksec font-semibold`}
       style={{ width: size, height: size, fontSize: size * 0.42 }}>{initial}</div>
   )
 }
@@ -71,7 +71,7 @@ export function MediaGrid({ p, dark = false }: { p: PostHit; dark?: boolean }) {
               className="w-full max-h-96 bg-black" src={`/api/media/${m.cache_key}`} />
           ) : (
             <a key={i} href={p.url} target="_blank" rel="noreferrer" className="relative block">
-              <img src={thumbUrl(m)} className="w-full aspect-video object-cover bg-slate-100" />
+              <img src={thumbUrl(m)} className="w-full aspect-video object-cover bg-plane" />
               <span className="absolute inset-0 grid place-items-center">
                 <IconPlayerPlayFilled size={28} color="#fff" className="drop-shadow" />
               </span>
@@ -79,7 +79,7 @@ export function MediaGrid({ p, dark = false }: { p: PostHit; dark?: boolean }) {
           )
         ) : (
           <img key={i} src={mediaUrl(m)} loading="lazy" referrerPolicy="no-referrer"
-            className={`w-full object-cover ${items.length === 1 ? 'max-h-[28rem]' : 'aspect-square'} ${dark ? 'bg-neutral-800' : 'bg-slate-100'}`}
+            className={`w-full object-cover ${items.length === 1 ? 'max-h-[28rem]' : 'aspect-square'} ${dark ? 'bg-neutral-800' : 'bg-plane'}`}
             onError={(e) => ((e.target as HTMLImageElement).style.display = 'none')} />
         ),
       )}
@@ -141,7 +141,7 @@ export function OpsFooter({ p, onMuted }: { p: PostHit; onMuted?: () => void }) 
         )}
         {p.relevance != null && <span title="relevance score">rel {p.relevance}</span>}
         {p.reach != null && <span title="estimated reach">~{fmtNum(p.reach)} reach</span>}
-        {!!p.custom_score && <span title="custom impact score" className="font-semibold text-[#7c3aed]">impact {p.custom_score}</span>}
+        {!!p.custom_score && <span title="custom impact score" className="font-semibold text-accent">impact {p.custom_score}</span>}
         {(p.topics || []).slice(0, 2).map((t) => (
           <span key={t} className="px-1.5 py-0.5 rounded-full bg-grid/60 text-inksec">{t}</span>
         ))}

@@ -246,7 +246,7 @@ function NewsCard({ p }: { p: PostHit }) {
     <div className="flex gap-3 p-3">
       {img && (
         <img src={img.cache_key ? `/api/media/${img.cache_key}` : img.src_url} referrerPolicy="no-referrer"
-          className="w-28 sm:w-32 h-24 object-cover rounded-lg bg-slate-100 shrink-0"
+          className="w-28 sm:w-32 h-24 object-cover rounded-lg bg-plane shrink-0"
           onError={(e) => ((e.target as HTMLImageElement).style.display = 'none')} />
       )}
       <div className="min-w-0 flex-1">

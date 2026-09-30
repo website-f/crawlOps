@@ -4,6 +4,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import PostCard from '../components/cards/PostCard'
 import { PlatformIcon } from '../components/PlatformIcon'
+import { useDialog } from '../components/ui/overlays'
 import { PostHit, download, get, post } from '../lib/api'
 import { BRAND, SENTIMENT } from '../lib/platform'
 
@@ -28,6 +29,7 @@ function SkeletonCard() {
 const DATE_PRESETS: [string, number][] = [['All time', 0], ['24 hours', 1], ['7 days', 7], ['30 days', 30]]
 
 export default function Feed() {
+  const dialog = useDialog()
   const [topics, setTopics] = useState<Topic[]>([])
   const [topicId, setTopicId] = useState<number | ''>('')
   const [qLive, setQLive] = useState('')
@@ -102,10 +104,10 @@ export default function Feed() {
   const clearAll = () => { setPlatforms([]); setSentiments([]); setEmotions([]); setLabels([]); setDays(0); setHasMedia(false); setVerifiedOnly(false) }
 
   const saveView = async () => {
-    const name = prompt('Name this saved view:')
+    const name = await dialog.prompt({ title: 'Save this view', message: 'Store the current filters, search and sort so you can jump back to them.', label: 'View name', placeholder: 'e.g. Negative mentions this week' })
     if (!name) return
     await post('/views', { name, params: { q, platforms, sentiments, emotions, labels, topicId, days, hasMedia, verifiedOnly, sort } })
-    loadViews()
+    loadViews(); dialog.toast('View saved', 'success')
   }
   const applyView = (params: any) => {
     if (!params) return
@@ -205,7 +207,7 @@ export default function Feed() {
         <label className="relative flex-1 min-w-56">
           <IconSearch size={16} stroke={2} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
           <input value={qLive} onChange={(e) => setQLive(e.target.value)} placeholder="Search posts, authors, domains"
-            className="w-full border border-grid rounded-xl pl-9 pr-3.5 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-300" />
+            className="w-full border border-grid rounded-xl pl-9 pr-3.5 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition" />
         </label>
         <select value={topicId} onChange={(e) => setTopicId(e.target.value ? Number(e.target.value) : '')}
           className="border border-grid rounded-xl px-3 py-2 text-sm bg-white">
