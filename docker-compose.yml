@@ -49,6 +49,7 @@ services:
   meilisearch:
     image: getmeili/meilisearch:v1.12
     restart: unless-stopped
+    mem_limit: 900m
     environment:
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-crawlops_meili_dev_key}
       MEILI_NO_ANALYTICS: "true"
@@ -91,6 +92,7 @@ services:
   backend-api:
     build: ./backend
     restart: unless-stopped
+    mem_limit: 1g
     depends_on:
       postgres:
         condition: service_healthy
@@ -101,14 +103,17 @@ services:
     env_file: [.env]
     environment:
       SERVICE_ROLE: api
-    # schema/seed runs per worker under a Postgres advisory lock, so N workers are safe
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${API_WORKERS:-2} --proxy-headers --forwarded-allow-ips=*
+    # schema/seed runs per worker under a Postgres advisory lock, so N workers are safe.
+    # 1 worker is plenty for a single-team deployment and halves the API's RAM (each
+    # worker loads sklearn/statsmodels/etc.); raise API_WORKERS in .env if you need it.
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${API_WORKERS:-1} --proxy-headers --forwarded-allow-ips=*
     ports:
       - "${BIND_ADDR:-127.0.0.1}:${API_PORT:-8401}:8000"
 
   backend-worker:
     build: ./backend
     restart: unless-stopped
+    mem_limit: 1200m
     depends_on:
       postgres:
         condition: service_healthy
@@ -135,6 +140,7 @@ services:
       # pinned: upstream HEAD (v1.17.0) runs `npm ci` before copying postinstall.js and fails to build
       context: https://github.com/jo-inc/camofox-browser.git#v1.16.0
     restart: unless-stopped
+    mem_limit: 1g          # cap the anti-detect browser so a stealth run can't spike RAM
     environment:
       CAMOFOX_ACCESS_KEY: ${CAMOFOX_ACCESS_KEY:-}
       CAMOFOX_API_KEY: ${CAMOFOX_API_KEY:-crawlops_camofox_cookiekey}
@@ -152,6 +158,7 @@ services:
     build: ./loginsvc
     restart: unless-stopped
     shm_size: "1gb"
+    mem_limit: 1200m       # a login browser only exists during a session; cap + GC frees it
     expose:
       - "8500"
 
@@ -171,13 +178,19 @@ services:
   # Self-serve BI / "data visual management": drag-drop dashboards on the CrawlOps
   # data. In Metabase, add a Postgres data source → host: postgres, db: crawlops,
   # user/pass from .env. Uses its own embedded app db (H2) on a volume.
+  # Opt-in (heavy JVM ~1GB). Start only when you need external BI:
+  #   docker compose --profile bi up -d metabase
+  # The built-in Data Explorer + Dashboards cover most needs without it.
   metabase:
     image: metabase/metabase:latest
+    profiles: ["bi"]
     restart: unless-stopped
+    mem_limit: 1g
     volumes:
       - metabasedata:/metabase-data
     environment:
       MB_DB_FILE: /metabase-data/metabase.db
+      JAVA_OPTS: "-Xmx640m"   # cap the heap; default lets the JVM grow to ~1.3GB
     ports:
       - "${BIND_ADDR:-127.0.0.1}:${METABASE_PORT:-8405}:3000"
 
