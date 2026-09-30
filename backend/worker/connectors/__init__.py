@@ -8,6 +8,7 @@ from .reddit import Reddit
 from .research import (ArXiv, ClinicalTrials, GitHub, SecEdgar, StackExchange,
                        Wikipedia)
 from .rss import Rss
+from .social_watch import ThreadsWatch, TikTokWatch, YouTubeWatch
 from .telegram import Telegram
 from .threads import Threads
 from .youtube import YouTube
@@ -36,6 +37,10 @@ def build(connector_key: str, db=None, source_config: dict | None = None):
         return Rss(feeds=cfg.get("feeds", []), rsshub_routes=cfg.get("rsshub_routes", []))
     if connector_key == "telegram":
         return Telegram(channels=cfg.get("channels", []))
+    if connector_key in ("tiktok_watch", "threads_watch", "youtube_watch"):
+        cls = {"tiktok_watch": TikTokWatch, "threads_watch": ThreadsWatch,
+               "youtube_watch": YouTubeWatch}[connector_key]
+        return cls(accounts=cfg.get("accounts", []))
     if connector_key in ("appstore", "factcheck", "podcastindex", "places"):
         from .gated import (AppStoreReviews, GoogleFactCheck, PlacesReviews,
                             PodcastIndex)

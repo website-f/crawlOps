@@ -1,6 +1,6 @@
 import { IconArrowBackUp, IconCheck, IconX } from '@tabler/icons-react'
 import { useEffect, useRef, useState } from 'react'
-import { blobUrl, del, post } from '../lib/api'
+import { blobUrl, del, get, post } from '../lib/api'
 
 /* Live interactive remote browser for logging into a platform inside CrawlOps.
    Driven by the Playwright+Camoufox login service: you see the real login page as
@@ -17,6 +17,7 @@ export default function LoginBrowser({ platform, onDone, onClose }: {
   const imgRef = useRef<HTMLImageElement>(null)
   const sidRef = useRef<string | null>(null)
   const lastUrl = useRef<string>('')
+  const finishing = useRef(false)
 
   useEffect(() => {
     let alive = true
@@ -65,7 +66,8 @@ export default function LoginBrowser({ platform, onDone, onClose }: {
   const typeText = () => { if (text) { send('type', { text }); setText('') } }
 
   const finish = async () => {
-    if (!sid) return
+    if (!sid || finishing.current) return
+    finishing.current = true
     setBusy(true); setStatus('Capturing session…')
     try {
       const r = await post<{ ok: boolean; imported: number }>(`/sources/login/${sid}/finish`, { platform })
@@ -73,10 +75,29 @@ export default function LoginBrowser({ platform, onDone, onClose }: {
       setStatus(`Connected ${platform} (${r.imported} cookies).`)
       onDone()
     } catch (e: any) {
+      finishing.current = false
       setStatus(`Could not save: ${String(e.message).slice(0, 80)}`)
       setBusy(false)
     }
   }
+
+  // auto-detect a completed login (platform auth cookie appears) and capture + close
+  // automatically — no need to eyeball the page and click Save.
+  useEffect(() => {
+    if (!sid) return
+    let stop = false
+    const iv = setInterval(async () => {
+      if (stop || finishing.current) return
+      try {
+        const s = await get<{ logged_in: boolean }>(`/sources/login/${sid}/status`)
+        if (s.logged_in && !finishing.current) {
+          setStatus('Login detected — saving session…')
+          setTimeout(() => finish(), 1200)   // let post-login cookies settle
+        }
+      } catch { /* transient */ }
+    }, 2500)
+    return () => { stop = true; clearInterval(iv) }
+  }, [sid])
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center p-3">
@@ -114,8 +135,9 @@ export default function LoginBrowser({ platform, onDone, onClose }: {
 
           <div className="flex items-center justify-between mt-3">
             <p className="text-[11px] text-muted max-w-md">
-              This is the real login page. Click fields and type your credentials (and 2FA / CAPTCHA)
-              here — nothing is stored. When you see your logged-in home, click Save session.
+              This is the real login page, opened through your crawl proxy so the session matches
+              the IP the crawler uses. Type your credentials (and 2FA / CAPTCHA) here — nothing is
+              stored. It saves and closes automatically once you're logged in; Save session is a manual fallback.
             </p>
             <button onClick={finish} disabled={busy || !sid}
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0ca30c] text-white text-sm disabled:opacity-50 active:scale-[0.98]">

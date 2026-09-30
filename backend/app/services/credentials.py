@@ -66,6 +66,23 @@ FIELD_SPECS: dict[str, list[dict]] = {
          "required": False, "placeholder": "durov",
          "help": "Public channels only, read via t.me/s/<name>. No API key or login needed."},
     ],
+    "tiktok_watch": [
+        {"key": "accounts", "type": "list", "label": "TikTok accounts to follow (one per line)",
+         "required": False, "placeholder": "nasa",
+         "help": "Public accounts, via the bundled RSSHub. Free, no login, no API key. "
+                 "This follows accounts — TikTok keyword search is login-walled."},
+    ],
+    "threads_watch": [
+        {"key": "accounts", "type": "list", "label": "Threads accounts to follow (one per line)",
+         "required": False, "placeholder": "zuck",
+         "help": "Public accounts, via RSSHub. Free, no login. Follows accounts, not search."},
+    ],
+    "youtube_watch": [
+        {"key": "accounts", "type": "list", "label": "YouTube channels to follow (@handle, one per line)",
+         "required": False, "placeholder": "@NASA",
+         "help": "Public channels, via RSSHub. Free — no YouTube API key needed. "
+                 "Use the channel @handle."},
+    ],
 }
 
 # .env fallbacks, so an upgrade doesn't disconnect a source that already worked
@@ -73,6 +90,20 @@ _ENV_FALLBACK = {
     ("youtube", "api_key"): lambda: settings.youtube_api_key,
     ("threads", "access_token"): lambda: settings.threads_access_token,
 }
+
+
+def encrypt_proxy(url: str) -> str:
+    """Encrypt a proxy URL (it embeds user:pass) for storage in Settings/DB."""
+    return encrypt(url) if url else ""
+
+
+def decrypt_proxy(stored: str) -> str:
+    """Decrypt a stored proxy URL; falls back to treating it as plaintext so proxies
+    added before encryption (or pasted directly) keep working."""
+    if not stored:
+        return ""
+    dec = decrypt(stored)
+    return dec or stored
 
 
 def spec_for(connector: str) -> list[dict]:

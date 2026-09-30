@@ -27,6 +27,13 @@ LOGIN_URLS = {
     "threads": "https://www.threads.net/login",
 }
 
+# a cookie that only exists once the account is actually logged in — used to auto-detect
+# success so the window can close itself the moment credentials + 2FA are done.
+LOGGED_IN_COOKIE = {
+    "facebook": "c_user", "instagram": "ds_user_id", "threads": "ds_user_id",
+    "tiktok": "sessionid", "x": "auth_token",
+}
+
 sessions: dict[str, dict] = {}
 app = FastAPI(title="CrawlOps login service")
 
@@ -148,6 +155,19 @@ async def scroll(sid: str, b: ScrollIn):
     s = _get(sid)
     await s["page"].mouse.wheel(0, b.dy)
     return {"ok": True}
+
+
+@app.get("/session/{sid}/status")
+async def login_status(sid: str):
+    """Has the account finished logging in? Lets the UI auto-capture + auto-close."""
+    s = _get(sid)
+    try:
+        cookies = await s["page"].context.cookies()
+    except Exception:  # noqa: BLE001
+        return {"logged_in": False, "url": ""}
+    names = {c.get("name") for c in cookies}
+    need = LOGGED_IN_COOKIE.get(s["platform"], "")
+    return {"logged_in": bool(need and need in names), "url": s["page"].url}
 
 
 @app.post("/session/{sid}/finish")

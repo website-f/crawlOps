@@ -6,7 +6,7 @@ import { FEED_TABS } from '../lib/platform'
 interface Topic {
   id: number; name: string; query: string; criteria: string; threshold: number
   langs: string[]; platforms: string[]; schedule_minutes: number; active: boolean
-  last_run_at: string | null
+  run_once: boolean; last_run_at: string | null
 }
 
 const EMPTY = { name: '', query: '', criteria: '', threshold: 55, langs: [], platforms: [], schedule_minutes: 30, active: true }
@@ -110,26 +110,44 @@ export default function Topics() {
         {topics.map((t) => (
           <div key={t.id} className="bg-white border border-grid rounded-2xl p-4">
             <div className="flex items-center gap-2">
-              <span className={`w-2 h-2 rounded-full ${t.active ? 'bg-[#0ca30c]' : 'bg-muted'}`} />
+              <span className={`w-2 h-2 rounded-full ${t.active ? 'bg-[#0ca30c]' : 'bg-muted'}`}
+                title={t.active ? 'auto-runs on schedule' : 'paused'} />
               <span className="font-semibold">{t.name}</span>
+              {t.run_once && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#2a78d6]/10 text-[#2a78d6]">queued</span>}
               <span className="text-xs text-muted ml-auto">
-                every {t.schedule_minutes}m · last run {t.last_run_at ? new Date(t.last_run_at).toLocaleTimeString() : 'never'}
+                {t.active ? `every ${t.schedule_minutes}m` : 'manual'} · last {t.last_run_at ? new Date(t.last_run_at).toLocaleTimeString() : 'never'}
               </span>
             </div>
             {t.query && <code className="block text-xs bg-plane rounded-lg px-2 py-1.5 mt-2 text-inksec">{t.query}</code>}
             {t.criteria && <p className="text-xs text-inksec mt-1.5 line-clamp-2">{t.criteria}</p>}
-            <div className="flex gap-4 mt-2.5 text-xs font-medium">
+            <div className="flex flex-wrap gap-x-4 gap-y-2 mt-2.5 text-xs font-medium items-center">
               <button onClick={() => post(`/topics/${t.id}/run-now`).then(reload)}
                 className="inline-flex items-center gap-1 text-[#2a78d6] active:scale-[0.97]">
                 <IconPlayerPlay size={13} stroke={2} />Run now
+              </button>
+              {/* auto-run toggle: paused topics only crawl on Run now, so they stop filling storage */}
+              <button onClick={() => post(`/topics/${t.id}/toggle-active`).then(reload)}
+                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border active:scale-[0.97]
+                  ${t.active ? 'border-[#0ca30c]/40 text-[#0a7d0a] bg-[#0ca30c]/5' : 'border-grid text-muted'}`}>
+                <span className={`w-2 h-2 rounded-full ${t.active ? 'bg-[#0ca30c]' : 'bg-muted'}`} />
+                Auto-run {t.active ? 'on' : 'off'}
               </button>
               <button onClick={() => { setEditing(t.id); setForm({ ...t }) }}
                 className="inline-flex items-center gap-1 text-inksec active:scale-[0.97]">
                 <IconPencil size={13} stroke={2} />Edit
               </button>
-              <button onClick={() => del(`/topics/${t.id}`).then(reload)}
-                className="inline-flex items-center gap-1 text-red-700 active:scale-[0.97]">
-                <IconTrash size={13} stroke={2} />Delete
+              <button onClick={async () => {
+                if (!confirm(`Delete ALL fetched results for "${t.name}"? The topic stays; only its posts + cached media are removed.`)) return
+                const r = await post<{ deleted: number }>('/posts/delete', { topic_id: t.id })
+                alert(`Cleared ${r.deleted} posts.`); reload()
+              }} className="inline-flex items-center gap-1 text-[#b45309] active:scale-[0.97]">
+                <IconTrash size={13} stroke={2} />Clear results
+              </button>
+              <button onClick={() => {
+                if (!confirm(`Delete topic "${t.name}" AND all its data (posts, media, clusters, alerts)? This cannot be undone.`)) return
+                del(`/topics/${t.id}`).then(reload)
+              }} className="inline-flex items-center gap-1 text-red-700 active:scale-[0.97]">
+                <IconTrash size={13} stroke={2} />Delete topic
               </button>
             </div>
           </div>

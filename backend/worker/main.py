@@ -30,16 +30,21 @@ LOCK_TTL = 600
 async def tick(r: redis.Redis) -> None:
     with SessionLocal() as db:
         now = datetime.now(timezone.utc)
-        topics = db.query(Topic).filter(Topic.active.is_(True)).all()
+        # A topic runs if it auto-runs on schedule AND is due, OR if it was manually
+        # queued via "Run now" (run_once) — which fires exactly once even when the
+        # topic is paused (active=False), so a paused topic never crawls on its own.
+        topics = db.query(Topic).all()
         due = [t for t in topics
-               if t.last_run_at is None
-               or t.last_run_at < now - timedelta(minutes=t.schedule_minutes)]
+               if t.run_once
+               or (t.active and (t.last_run_at is None
+                                 or t.last_run_at < now - timedelta(minutes=t.schedule_minutes)))]
         for topic in due:
             lock_key = f"lock:topic:{topic.id}"
             if not r.set(lock_key, "1", nx=True, ex=LOCK_TTL):
                 continue
             try:
-                log.info("running topic %s (%s)", topic.id, topic.name)
+                log.info("running topic %s (%s)%s", topic.id, topic.name,
+                         " [run-now]" if topic.run_once else "")
                 totals = await run_topic(db, topic)
                 log.info("topic %s: found=%s inserted=%s", topic.id,
                          totals["found"], totals["inserted"])
@@ -47,6 +52,9 @@ async def tick(r: redis.Redis) -> None:
                 if fired:
                     log.info("topic %s: %s alert(s) fired", topic.id, fired)
             finally:
+                if topic.run_once:                    # consume the one-off request
+                    topic.run_once = False
+                    db.commit()
                 r.delete(lock_key)
 
 

@@ -22,7 +22,8 @@ class Topic(Base):
     langs: Mapped[list] = mapped_column(JSON, default=list)
     platforms: Mapped[list] = mapped_column(JSON, default=list)    # empty = all
     schedule_minutes: Mapped[int] = mapped_column(Integer, default=30)
-    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)   # auto-run on schedule
+    run_once: Mapped[bool] = mapped_column(Boolean, default=False)  # queued single "Run now"
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

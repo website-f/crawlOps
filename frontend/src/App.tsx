@@ -13,6 +13,7 @@ import Login from './pages/Login'
 // pages load on demand so three.js / leaflet / recharts stay out of the first paint
 const AIEngine = lazy(() => import('./pages/AIEngine'))
 const Alerts = lazy(() => import('./pages/Alerts'))
+const Authors = lazy(() => import('./pages/Authors'))
 const Analytics = lazy(() => import('./pages/Analytics'))
 const Audience = lazy(() => import('./pages/Audience'))
 const Competitors = lazy(() => import('./pages/Competitors'))
@@ -47,6 +48,7 @@ const GROUPS: { label: string; items: { to: string; label: string; Icon: any }[]
       { to: '/analytics/trends', label: 'Trends', Icon: IconChartArcs },
       { to: '/analytics/influencers', label: 'Influencers', Icon: IconUsersGroup },
       { to: '/audience', label: 'Audience & Issues', Icon: IconUsers },
+      { to: '/authors', label: 'Author Intel', Icon: IconUsersGroup },
       { to: '/galaxy', label: 'Galaxy', Icon: IconPlanet },
       { to: '/analytics/brief', label: 'Daily Brief', Icon: IconFileText },
       { to: '/competitors', label: 'Competitors', Icon: IconScale },
@@ -156,6 +158,7 @@ function Shell() {
           <Route path="/analytics/influencers" element={<Analytics view="influencers" />} />
           <Route path="/competitors" element={<Competitors />} />
           <Route path="/audience" element={<Audience />} />
+          <Route path="/authors" element={<Authors />} />
           <Route path="/explore" element={<DataExplorer />} />
           <Route path="/galaxy" element={<Galaxy />} />
           <Route path="/map" element={<MapView />} />

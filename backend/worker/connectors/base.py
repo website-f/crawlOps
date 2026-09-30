@@ -91,8 +91,9 @@ def _proxy_pool() -> list[dict]:
     try:
         from app.db import SessionLocal
         from app.models import Proxy
+        from app.services.credentials import decrypt_proxy
         with SessionLocal() as db:
-            pool = [{"id": p.id, "url": p.url, "tag": p.tag}
+            pool = [{"id": p.id, "url": decrypt_proxy(p.url), "tag": p.tag}
                     for p in db.query(Proxy).filter(Proxy.active.is_(True)).all()]
     except Exception:  # noqa: BLE001
         pool = []

@@ -6,6 +6,7 @@ from ..config import settings
 from ..db import get_db
 from ..models import FetchRun, Proxy, Source, StealthSession
 from ..services import credentials as creds
+from ..services.credentials import decrypt_proxy, encrypt_proxy
 from ..services.proxy_manager import proxy_manager
 
 router = APIRouter(prefix="/api/sources", tags=["sources"])
@@ -173,7 +174,7 @@ class ProxyIn(BaseModel):
 
 @router.get("/proxies")
 def list_proxies(db: Session = Depends(get_db)):
-    pool = [{"id": p.id, "url": p.url.split("@")[-1], "tag": p.tag,
+    pool = [{"id": p.id, "url": decrypt_proxy(p.url).split("@")[-1], "tag": p.tag,
              "country": p.country, "active": p.active}
             for p in db.query(Proxy).all()]  # strip credentials before returning
     return proxy_manager.stats(pool)
@@ -183,7 +184,7 @@ def list_proxies(db: Session = Depends(get_db)):
 def add_proxy(body: ProxyIn, db: Session = Depends(get_db)):
     if body.tag not in ("residential", "datacenter"):
         raise HTTPException(400, "tag must be residential|datacenter")
-    p = Proxy(url=body.url, tag=body.tag, country=body.country)
+    p = Proxy(url=encrypt_proxy(body.url), tag=body.tag, country=body.country)
     db.add(p)
     db.commit()
     return {"id": p.id}
@@ -313,14 +314,31 @@ def login_start(body: LoginStartIn, db: Session = Depends(get_db)):
     proxy = None
     if body.proxy_id:
         p = db.get(Proxy, body.proxy_id)
-        proxy = p.url if p else None
+        proxy = decrypt_proxy(p.url) if p else None
+    else:
+        # auto-route login through a residential proxy if one exists, so the session is
+        # created from the same kind of IP the crawler will use — this is what stops
+        # Meta/TikTok flagging a "suspicious login" and killing the session later.
+        p = (db.query(Proxy).filter(Proxy.active.is_(True), Proxy.tag == "residential")
+             .first())
+        proxy = decrypt_proxy(p.url) if p else None
     try:
         r = httpx.post(f"{_login_base()}/session",
                        json={"platform": body.platform, "proxy": proxy}, timeout=90)
         r.raise_for_status()
-        return r.json()
+        return {**r.json(), "via_proxy": bool(proxy)}
     except httpx.HTTPError as e:
         raise HTTPException(502, f"login service unavailable: {e}") from e
+
+
+@router.get("/login/{sid}/status")
+def login_status(sid: str):
+    import httpx
+    try:
+        r = httpx.get(f"{_login_base()}/session/{sid}/status", timeout=20)
+        return r.json()
+    except httpx.HTTPError as e:
+        raise HTTPException(502, str(e)) from e
 
 
 @router.get("/login/{sid}/frame")

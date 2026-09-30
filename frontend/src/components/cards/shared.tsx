@@ -1,7 +1,33 @@
 import { IconEye, IconExternalLink, IconPlayerPlayFilled, IconSparkles, IconVolumeOff } from '@tabler/icons-react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PostHit, fmtNum, mediaUrl, post, thumbUrl, timeAgo } from '../../lib/api'
 import { SENTIMENT } from '../../lib/platform'
+
+/** In-feed YouTube: thumbnail + play button, swaps to the embedded player on click
+ *  (lite pattern — no iframe until the user actually wants to watch). */
+function YouTubeEmbed({ id, thumb }: { id: string; thumb: string }) {
+  const [play, setPlay] = useState(false)
+  if (play) {
+    return (
+      <iframe className="w-full aspect-video" allow="autoplay; encrypted-media; picture-in-picture"
+        allowFullScreen title="YouTube video"
+        src={`https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0`} />
+    )
+  }
+  return (
+    <button onClick={() => setPlay(true)} className="relative block w-full group" title="Play video">
+      <img src={thumb} loading="lazy"
+        className="w-full aspect-video object-cover bg-black"
+        onError={(e) => ((e.target as HTMLImageElement).src = `https://i.ytimg.com/vi/${id}/hqdefault.jpg`)} />
+      <span className="absolute inset-0 grid place-items-center">
+        <span className="w-16 h-11 rounded-xl bg-[#f00]/90 grid place-items-center transition group-hover:bg-[#f00]">
+          <IconPlayerPlayFilled size={22} color="#fff" />
+        </span>
+      </span>
+    </button>
+  )
+}
 
 export function Avatar({ src, name, size = 40, round = true }: { src?: string; name: string; size?: number; round?: boolean }) {
   const initial = (name || '?').replace(/^[@u]\//, '').charAt(0).toUpperCase()
@@ -25,15 +51,7 @@ export function MediaGrid({ p, dark = false }: { p: PostHit; dark?: boolean }) {
       {items.slice(0, 4).map((m, i) =>
         m.kind === 'video' ? (
           m.youtube_id ? (
-            <a key={i} href={p.url} target="_blank" rel="noreferrer" className="relative block group">
-              <img src={thumbUrl(m)} className="w-full aspect-video object-cover" />
-              <span className="absolute inset-0 grid place-items-center">
-                <span className="w-14 h-10 rounded-lg bg-black/70 grid place-items-center
-                                 transition group-hover:bg-black/85">
-                  <IconPlayerPlayFilled size={18} color="#fff" />
-                </span>
-              </span>
-            </a>
+            <YouTubeEmbed key={i} id={m.youtube_id} thumb={thumbUrl(m)} />
           ) : m.cache_key ? (
             <video key={i} controls preload="none" poster={m.thumb_key ? `/api/media/${m.thumb_key}` : undefined}
               className="w-full max-h-96 bg-black" src={`/api/media/${m.cache_key}`} />

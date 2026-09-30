@@ -11,6 +11,7 @@ from ..models import (AlertEvent, AlertRule, BenchmarkEntity, Cluster, Post,
 from ..services import meili
 from ..services.boolean_query import compile_query, to_boolean_string
 from ..services.gateway import GatewayUnavailable, gateway
+from ..services.media_cache import _media_keys, delete_media_objects
 
 router = APIRouter(prefix="/api/topics", tags=["topics"])
 
@@ -30,6 +31,7 @@ def _dump(t: Topic) -> dict:
     return {"id": t.id, "name": t.name, "query": t.query, "criteria": t.criteria,
             "threshold": t.threshold, "langs": t.langs, "platforms": t.platforms,
             "schedule_minutes": t.schedule_minutes, "active": t.active,
+            "run_once": t.run_once,
             "last_run_at": t.last_run_at.isoformat() if t.last_run_at else None}
 
 
@@ -62,6 +64,9 @@ def delete_topic(topic_id: int, db: Session = Depends(get_db)):
     t = db.get(Topic, topic_id)
     if not t:
         return {"ok": True}
+    # reclaim cached media (MinIO objects aren't FK'd, so nothing else would free them)
+    media_lists = [row[0] for row in
+                   db.execute(select(Post.media).where(Post.topic_id == topic_id)).all()]
     # children first — the FKs have no ON DELETE CASCADE, so a topic that has
     # crawled anything would otherwise fail with a ForeignKeyViolation
     post_ids = select(Post.id).where(Post.topic_id == topic_id)
@@ -75,19 +80,32 @@ def delete_topic(topic_id: int, db: Session = Depends(get_db)):
     db.delete(t)
     db.commit()
     meili.delete_topic_posts(topic_id)
+    delete_media_objects(_media_keys(media_lists))
     return {"ok": True}
 
 
 @router.post("/{topic_id}/run-now")
 def run_now(topic_id: int, db: Session = Depends(get_db)):
-    """Zero out last_run_at so the worker picks the topic up on its next tick (<=30s)."""
+    """Queue exactly ONE crawl. Does not turn on auto-run — a paused topic runs once
+    and goes quiet again. The worker picks it up on its next tick (<=30s)."""
     t = db.get(Topic, topic_id)
     if not t:
         raise HTTPException(404)
-    t.last_run_at = None
-    t.active = True
+    t.run_once = True
     db.commit()
-    return {"ok": True, "note": "queued; worker picks it up within 30s"}
+    return {"ok": True, "note": "queued one run; worker picks it up within 30s"}
+
+
+@router.post("/{topic_id}/toggle-active")
+def toggle_active(topic_id: int, db: Session = Depends(get_db)):
+    """Flip auto-run. active=False = paused: the topic only crawls when you click
+    Run now, so it stops filling storage on its own."""
+    t = db.get(Topic, topic_id)
+    if not t:
+        raise HTTPException(404)
+    t.active = not t.active
+    db.commit()
+    return {"id": t.id, "active": t.active}
 
 
 class BuildQueryIn(BaseModel):

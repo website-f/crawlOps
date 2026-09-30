@@ -26,6 +26,9 @@ DEFAULT_SOURCES = [
     ("stackexchange", "stackexchange", 1),
     ("clinicaltrials", "clinicaltrials", 1),
     ("news", "rss", 2),
+    ("tiktok", "tiktok_watch", 2),      # free public-account watchlists via RSSHub
+    ("threads", "threads_watch", 2),
+    ("youtube", "youtube_watch", 2),
     ("appstore", "appstore", 2),
     ("factcheck", "factcheck", 2),
     ("podcast", "podcastindex", 2),
@@ -57,6 +60,7 @@ _ADD_COLUMNS = [
     ("geo_cache", "country", "VARCHAR(2)"),
     ("geo_cache", "country_name", "VARCHAR(80)"),
     ("geo_cache", "region", "VARCHAR(120)"),
+    ("topics", "run_once", "BOOLEAN DEFAULT false"),
     # semantic search: per-post embedding (nomic-embed-text = 768d). Stored via raw SQL
     # (not ORM-mapped) so the hot feed path never pays to load 768 floats per post.
     ("posts", "embedding", "vector(768)"),

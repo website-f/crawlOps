@@ -3,12 +3,14 @@ import io
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import BaseModel
+from sqlalchemy import delete as sa_delete
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import Post, SuppressedAuthor
+from ..models import Post, PostMetric, SuppressedAuthor
 from ..services import meili
-from ..services.media_cache import stream_object
+from ..services.media_cache import _media_keys, delete_media_objects, stream_object
 
 router = APIRouter(prefix="/api", tags=["posts"])
 
@@ -60,6 +62,62 @@ def feed(q: str = "", platform: str = "", topic_id: int | None = None,
         h["suppression_watch"] = f"{h.get('platform')}:{h.get('author_key')}" in watch_keys
     return {"hits": hits, "total": res.get("totalHits", len(hits)),
             "page": page, "per_page": per_page}
+
+
+class DeleteIn(BaseModel):
+    ids: list[int] | None = None          # explicit selection (bulk delete)
+    topic_id: int | None = None           # or delete a whole topic's results
+    platform: str | None = None           # optional filters when deleting by topic
+    sentiment: str | None = None
+    hidden_only: bool = False             # only purge low-relevance/hidden posts
+
+
+@router.post("/posts/delete")
+def bulk_delete(body: DeleteIn, db: Session = Depends(get_db)):
+    """Delete posts by explicit ids, or by topic (+optional filters). Frees the DB rows,
+    their cached media objects, and the search index entries. This is how storage is
+    reclaimed — deleting a topic's fetched results or pruning a selection from the feed."""
+    q = db.query(Post)
+    if body.ids:
+        q = q.filter(Post.id.in_(body.ids))
+    elif body.topic_id is not None:
+        q = q.filter(Post.topic_id == body.topic_id)
+        if body.platform:
+            q = q.filter(Post.platform == body.platform)
+        if body.sentiment in ("pos", "neu", "neg"):
+            q = q.filter(Post.sentiment == body.sentiment)
+        if body.hidden_only:
+            q = q.filter(Post.is_hidden.is_(True))
+    else:
+        raise HTTPException(400, "provide ids or topic_id")
+
+    rows = q.with_entities(Post.id, Post.media).all()
+    ids = [r[0] for r in rows]
+    if not ids:
+        return {"deleted": 0}
+    keys = _media_keys([r[1] for r in rows])
+    db.execute(sa_delete(PostMetric).where(PostMetric.post_id.in_(ids)))
+    db.execute(sa_delete(Post).where(Post.id.in_(ids)))
+    db.commit()
+    meili.delete_posts(ids)
+    delete_media_objects(keys)
+    return {"deleted": len(ids)}
+
+
+@router.get("/posts/ids")
+def post_ids(topic_id: int | None = None, platform: str = "", sentiment: str = "",
+             hidden_only: bool = False, limit: int = 20000, db: Session = Depends(get_db)):
+    """All matching post ids (for select-all before a bulk delete)."""
+    q = db.query(Post.id)
+    if topic_id is not None:
+        q = q.filter(Post.topic_id == topic_id)
+    if platform:
+        q = q.filter(Post.platform == platform)
+    if sentiment in ("pos", "neu", "neg"):
+        q = q.filter(Post.sentiment == sentiment)
+    if hidden_only:
+        q = q.filter(Post.is_hidden.is_(True))
+    return {"ids": [r[0] for r in q.limit(min(limit, 50000)).all()]}
 
 
 @router.get("/posts/geo")
