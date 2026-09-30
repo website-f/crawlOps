@@ -18,3 +18,4 @@ statsmodels==0.14.*
 pyod==2.0.*
 trafilatura==1.12.*
 pillow==11.*
+curl_cffi==0.7.*

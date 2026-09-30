@@ -17,28 +17,49 @@ router = APIRouter(prefix="/api", tags=["posts"])
 
 @router.get("/posts")
 def feed(q: str = "", platform: str = "", topic_id: int | None = None,
-         sentiment: str = "", lang: str = "", has_media: bool | None = None,
-         min_engagement: int = 0, since_ts: int | None = None, until_ts: int | None = None,
+         sentiment: str = "", emotion: str = "", lang: str = "", country: str = "",
+         stance: str = "", issue: str = "", label: str = "", has_media: bool | None = None,
+         min_engagement: int = 0, min_reach: int = 0,
+         since_ts: int | None = None, until_ts: int | None = None,
          verified: bool | None = None, sort: str = "posted_ts:desc",
          page: int = Query(1, ge=1), per_page: int = Query(30, le=100),
          db: Session = Depends(get_db)):
     filters = ["is_hidden = false"]
+
+    def _multi(field: str, raw: str, allowed=None):
+        vals = [v.strip() for v in raw.split(",") if v.strip()
+                and (allowed is None or v.strip() in allowed) and v.strip().replace("-", "").isalnum()]
+        if vals:
+            filters.append("(" + " OR ".join(f"{field} = '{v}'" for v in vals) + ")")
+
     if platform:
-        ors = " OR ".join(f"platform = '{p.strip()}'" for p in platform.split(",") if p.strip().isalnum())
-        if ors:
-            filters.append(f"({ors})")
+        _multi("platform", platform)
     if topic_id:
         filters.append(f"topic_id = {topic_id}")
     if sentiment:
-        sents = [s for s in sentiment.split(",") if s in ("pos", "neu", "neg")]
-        if sents:
-            filters.append("(" + " OR ".join(f"sentiment = '{s}'" for s in sents) + ")")
+        _multi("sentiment", sentiment, ("pos", "neu", "neg"))
+    if emotion:
+        _multi("emotion", emotion)
+    if stance:
+        _multi("stance", stance, ("support", "oppose", "neutral"))
+    if issue:
+        _multi("issue", issue)
+    if country:
+        _multi("country", country)
+    if label:
+        # tag names can have spaces — quote + escape rather than the alnum filter
+        labs = [f'labels = "{v.strip().replace(chr(34), "")}"'
+                for v in label.split(",") if v.strip()]
+        if labs:
+            filters.append("(" + " OR ".join(labs) + ")")
     if lang.isalpha() and len(lang) <= 8:
         filters.append(f"lang = '{lang}'")
     if has_media is not None:
         filters.append(f"has_media = {'true' if has_media else 'false'}")
     if min_engagement > 0:
         filters.append(f"engagement_total >= {min_engagement}")
+    if min_reach > 0:
+        filters.append(f"reach >= {int(min_reach)}")
     if since_ts:
         filters.append(f"posted_ts >= {int(since_ts)}")
     if until_ts:
@@ -51,7 +72,8 @@ def feed(q: str = "", platform: str = "", topic_id: int | None = None,
                   db.query(SuppressedAuthor).filter(SuppressedAuthor.mode == "watch").all()}
 
     if sort not in ("posted_ts:desc", "posted_ts:asc", "engagement_total:desc",
-                    "relevance:desc", "reach:desc"):
+                    "relevance:desc", "reach:desc", "virality:desc", "risk:desc",
+                    "custom_score:desc"):
         sort = "posted_ts:desc"
     try:
         res = meili.search(q, filters, sort, page, per_page)

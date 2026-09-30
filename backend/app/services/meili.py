@@ -11,8 +11,11 @@ INDEX = "posts"
 FILTERABLE = ["platform", "topic_id", "sentiment", "emotion", "lang", "domain",
               "cluster_id", "dup_group", "author_key", "bot_suspect", "is_hidden",
               "has_media", "posted_ts", "relevance", "author_verified",
-              "country", "region", "topics", "entities"]
-SORTABLE = ["posted_ts", "engagement_total", "relevance", "reach", "risk", "virality"]
+              "country", "region", "topics", "entities",
+              "reach", "engagement_total", "virality", "risk", "stance", "issue",
+              "labels"]
+SORTABLE = ["posted_ts", "engagement_total", "relevance", "reach", "risk", "virality",
+            "custom_score"]
 SEARCHABLE = ["title", "text", "author_name", "author_handle", "domain", "topics", "entities"]
 
 
@@ -50,12 +53,13 @@ def doc_from_post(p) -> dict:
         "emotion": p.emotion, "entities": p.entities or [],
         "virality": p.virality, "risk": p.risk,
         "country": p.country, "region": p.region, "country_name": p.country_name,
-        "topics": p.topics or [], "media": p.media or [],
+        "topics": p.topics or [], "labels": p.labels or [], "media": p.media or [],
+        "sentiment_locked": bool(getattr(p, "sentiment_locked", False)),
         "has_media": bool(p.media), "engagement": e,
         "engagement_total": sum(v for v in
                                 [e.get("likes", 0), e.get("comments", 0), e.get("shares", 0)]
                                 if isinstance(v, (int, float))),
-        "reach": p.reach, "emv": p.emv,
+        "reach": p.reach, "emv": p.emv, "custom_score": p.custom_score or 0,
         "posted_ts": int(p.posted_at.timestamp()) if p.posted_at else 0,
         "cluster_id": p.cluster_id, "dup_group": p.dup_group,
         "bot_suspect": p.bot_suspect, "is_hidden": p.is_hidden,

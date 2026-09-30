@@ -138,11 +138,100 @@ def _penalize_rate(domain: str, seconds: float) -> None:
         pass
 
 
+# curl_cffi impersonates a real Chrome's TLS/JA3 + HTTP2 fingerprint, so requests stop
+# looking like a Python bot. Many "403/429" blocks (reddit, bluesky, some news CDNs)
+# are TLS-fingerprint based, not IP based — this defeats them with NO proxy. Falls back
+# to httpx if curl_cffi isn't installed.
+try:
+    try:
+        from curl_cffi import AsyncSession as _CurlSession       # newer curl_cffi
+    except ImportError:
+        from curl_cffi.requests import AsyncSession as _CurlSession  # 0.7.x path
+    _HAVE_CURL = True
+except Exception:  # noqa: BLE001
+    _HAVE_CURL = False
+
+IMPERSONATE = "chrome"
+
+
+async def _http_get(url: str, params, headers, timeout: float, proxy: str | None):
+    """One GET, browser-fingerprinted via curl_cffi when available. Returns a response
+    exposing .status_code/.text/.json()/.headers/.raise_for_status() either way."""
+    if _HAVE_CURL:
+        proxies = {"http": proxy, "https": proxy} if proxy else None
+        async with _CurlSession() as s:
+            # impersonate sets a consistent Chrome UA + header order; only override the
+            # UA when a connector explicitly needs its own (e.g. SEC's contact string).
+            return await s.get(url, params=params, headers=headers or None,
+                               timeout=timeout, impersonate=IMPERSONATE,
+                               proxies=proxies, allow_redirects=True)
+    client_kw = {"timeout": timeout, "follow_redirects": True}
+    if proxy:
+        client_kw["proxy"] = proxy
+    async with httpx.AsyncClient(**client_kw) as client:
+        return await client.get(url, params=params,
+                                headers={"User-Agent": UA, **(headers or {})})
+
+
+# Cloudflare "Just a moment…" JS challenge — curl_cffi's TLS trick can't solve it, but
+# FlareSolverr (a real headless browser, opt-in `--profile cloudflare`) can. We only call
+# it when we actually see a challenge, so it stays idle for the 95% of sites that don't.
+_CF_MARKERS = ("just a moment", "cf-mitigated", "checking your browser",
+               "cf-chl", "cf-challenge", "attention required", "cloudflare")
+
+
+class _SolvedResponse:
+    """Response-shaped wrapper around FlareSolverr's solved HTML."""
+    def __init__(self, text: str, status: int = 200):
+        self.status_code = status
+        self.text = text or ""
+        self.content = self.text.encode("utf-8", "ignore")
+        self.headers: dict = {}
+
+    def json(self):
+        import json
+        return json.loads(self.text)
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"{self.status_code}")
+
+
+def _looks_like_cf(r) -> bool:
+    if getattr(r, "status_code", 0) not in (403, 503):
+        return False
+    try:
+        body = (r.text or "")[:4000].lower()
+    except Exception:  # noqa: BLE001
+        return False
+    return any(m in body for m in _CF_MARKERS)
+
+
+async def _flaresolverr(url: str, timeout: float):
+    """Solve a Cloudflare challenge via FlareSolverr; None if it's off/unreachable."""
+    from app.config import settings
+    base = (settings.flaresolverr_url or "").rstrip("/")
+    if not base:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=timeout + 20) as c:
+            r = await c.post(f"{base}/v1", json={"cmd": "request.get", "url": url,
+                                                 "maxTimeout": int(timeout * 1000)})
+        if r.status_code != 200:
+            return None
+        sol = (r.json() or {}).get("solution") or {}
+        html = sol.get("response")
+        return _SolvedResponse(html, int(sol.get("status") or 200)) if html else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 async def request(url: str, params: dict | None = None, headers: dict | None = None,
                   timeout: float = 25, attempts: int = 3,
-                  purpose: str = "tier2") -> httpx.Response:
-    """GET with proxy rotation + per-domain rate limiting + retry/backoff.
-    Reports each proxy's outcome to the health scorer. Falls back to direct."""
+                  purpose: str = "tier2"):
+    """GET with browser-fingerprint impersonation + proxy rotation + per-domain rate
+    limiting + retry/backoff, plus a Cloudflare-challenge fallback. Reports each proxy's
+    outcome to the health scorer."""
     from app.services.proxy_manager import proxy_manager
     domain = urlparse(url).netloc
     pool = _proxy_pool()
@@ -154,13 +243,15 @@ async def request(url: str, params: dict | None = None, headers: dict | None = N
             proxy = proxy_manager.acquire(pool, purpose=purpose) if pool else None
         except Exception:  # noqa: BLE001
             proxy = None
-        client_kw = {"timeout": timeout, "follow_redirects": True}
-        if proxy:
-            client_kw["proxy"] = proxy["url"]
         try:
-            async with httpx.AsyncClient(**client_kw) as client:
-                r = await client.get(url, params=params,
-                                     headers={"User-Agent": UA, **(headers or {})})
+            r = await _http_get(url, params, headers, timeout,
+                                proxy["url"] if proxy else None)
+            if _looks_like_cf(r):                     # Cloudflare wall -> try the solver
+                solved = await _flaresolverr(url, timeout)
+                if solved is not None:
+                    if proxy:
+                        proxy_manager.report(proxy["id"], "ok")
+                    return solved
             if r.status_code in (429, 403, 451, 503) or r.status_code >= 500:
                 if proxy:
                     proxy_manager.report(proxy["id"], "soft_block")

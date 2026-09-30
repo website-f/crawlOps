@@ -71,10 +71,13 @@ export interface PostHit {
   engagement_total: number
   reach: number | null
   emv: number | null
+  custom_score?: number | null
   posted_ts: number
   cluster_id: number | null
   suppression_watch?: boolean
   score?: number   // cosine similarity, set by semantic search / "more like this"
+  labels?: string[]
+  sentiment_locked?: boolean
 }
 
 export const mediaUrl = (m: PostHit['media'][number]) =>

@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     camofox_api_key: str = "crawlops_camofox_cookiekey"  # enables cookie import
     loginsvc_url: str = "http://loginsvc:8500"
     rsshub_url: str = "http://rsshub:1200"
+    # optional Cloudflare-challenge solver (start with --profile cloudflare); blank = off
+    flaresolverr_url: str = "http://flaresolverr:8191"
 
     threads_access_token: str = ""
     youtube_api_key: str = ""

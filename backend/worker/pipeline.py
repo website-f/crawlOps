@@ -392,8 +392,9 @@ async def _enrich_fetch(topic: Topic, post: Post, m: RawMention, issues,
 
 def _apply_judge(post: Post, data: dict, topic: Topic) -> None:
     post.relevance = max(0, min(100, int(data.get("relevance", 0))))
-    post.sentiment = data.get("sentiment") if data.get("sentiment") in ("neg", "neu", "pos") else "neu"
-    post.sentiment_score = max(-1.0, min(1.0, float(data.get("sentiment_score", 0))))
+    if not getattr(post, "sentiment_locked", False):   # keep a manual override
+        post.sentiment = data.get("sentiment") if data.get("sentiment") in ("neg", "neu", "pos") else "neu"
+        post.sentiment_score = max(-1.0, min(1.0, float(data.get("sentiment_score", 0))))
     emo = data.get("emotion")
     post.emotion = emo if emo in EMOTIONS else "neutral"
     post.lang = post.lang or (data.get("lang") or "")[:12]
@@ -424,6 +425,17 @@ async def _finalize(db: DbSession, topic: Topic, post: Post, res: dict,
 
     post.reach = estimate_reach(post.platform, post.engagement, post.author_followers)
     post.emv = estimate_emv(post.platform, post.reach, post.sentiment, cpm_table)
+    try:
+        from app.services import custom_score
+        e = post.engagement or {}
+        eng = sum(v for v in [e.get("likes", 0), e.get("comments", 0), e.get("shares", 0)]
+                  if isinstance(v, (int, float)))
+        post.custom_score = custom_score.compute(
+            custom_score.current_config(db), platform=post.platform, reach=post.reach,
+            engagement_total=eng, relevance=post.relevance, sentiment=post.sentiment,
+            verified=post.author_verified, text=f"{post.title} {post.text}")
+    except Exception:  # noqa: BLE001
+        pass
 
     if post.locations and not post.is_hidden:
         geo = await geocode(db, post.locations[0])

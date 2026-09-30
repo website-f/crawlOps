@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import Text, and_, func
+from sqlalchemy import Text, and_, func, text
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -14,6 +14,50 @@ router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
 def _visible(db: Session):
     return db.query(Post).filter(Post.is_hidden.is_(False))
+
+
+@router.get("/trending")
+def trending(topic_id: int | None = None, hours: int = 24, min_count: int = 3,
+             db: Session = Depends(get_db)):
+    """What's surging right now: terms/entities appearing far more in the last `hours`
+    than in the prior equal window (velocity), Meltwater-style. Uses the judge's
+    already-extracted topics + entities, so it's cheap and precise."""
+    now = datetime.now(timezone.utc)
+    recent_start = now - timedelta(hours=max(1, min(hours, 168)))
+    prior_start = recent_start - (now - recent_start)
+    tfilter = "AND topic_id = :tid" if topic_id else ""
+    params = {"recent_start": recent_start, "prior_start": prior_start,
+              "min_count": max(1, min_count), "k": 30}
+    if topic_id:
+        params["tid"] = topic_id
+    sql = text(f"""
+        WITH terms AS (
+          SELECT lower(t) AS term, fetched_at FROM posts,
+                 LATERAL jsonb_array_elements_text(topics) AS t
+          WHERE is_hidden = false AND fetched_at >= :prior_start {tfilter}
+          UNION ALL
+          SELECT lower(e) AS term, fetched_at FROM posts,
+                 LATERAL jsonb_array_elements_text(entities) AS e
+          WHERE is_hidden = false AND fetched_at >= :prior_start {tfilter}
+        ),
+        recent AS (SELECT term, count(*) c FROM terms WHERE fetched_at >= :recent_start GROUP BY term),
+        prior  AS (SELECT term, count(*) c FROM terms WHERE fetched_at <  :recent_start GROUP BY term)
+        SELECT r.term, r.c AS recent, COALESCE(p.c, 0) AS prior,
+               round(((r.c::numeric + 1) / (COALESCE(p.c, 0) + 1)), 2) AS velocity
+        FROM recent r LEFT JOIN prior p USING (term)
+        WHERE r.c >= :min_count AND length(r.term) >= 2
+        ORDER BY velocity DESC, recent DESC
+        LIMIT :k
+    """)
+    try:
+        rows = db.execute(sql, params).all()
+    except Exception:  # noqa: BLE001 — e.g. topics/entities still json on a fresh DB
+        db.rollback()
+        return {"window_hours": hours, "trending": []}
+    return {"window_hours": hours,
+            "trending": [{"term": r.term, "recent": r.recent, "prior": r.prior,
+                          "velocity": float(r.velocity),
+                          "new": r.prior == 0} for r in rows]}
 
 
 @router.get("/overview")

@@ -17,11 +17,29 @@ export default function Settings() {
   const [testResult, setTestResult] = useState('')
   const [users, setUsers] = useState<AppUser[] | null>(null)
   const [nu, setNu] = useState({ username: '', password: '', role: 'analyst' })
+  const [sc, setSc] = useState<any>(null)
+  const [recomputing, setRecomputing] = useState('')
 
   useEffect(() => {
     get<AllSettings>('/settings').then(setS)
+    get('/scoring').then(setSc).catch(() => {})
     get<AppUser[]>('/auth/users').then(setUsers).catch(() => setUsers(null)) // 403 for non-admins
   }, [])
+
+  const saveScoring = async () => {
+    if (!sc) return
+    await put('/scoring', { value: sc })
+    setSaved('scoring'); setTimeout(() => setSaved(''), 1500)
+  }
+  const recompute = async () => {
+    if (!sc) return
+    setRecomputing('running')
+    try {
+      await put('/scoring', { value: sc })                 // apply current weights first
+      const r = await post<{ recomputed: number }>('/scoring/recompute')
+      setRecomputing(`Re-scored ${r.recomputed} posts.`)
+    } catch { setRecomputing('failed') }
+  }
 
   const reloadUsers = () => get<AppUser[]>('/auth/users').then(setUsers).catch(() => {})
 
@@ -137,6 +155,62 @@ export default function Settings() {
           ))}
         </div>
       </section>
+
+      {sc && (
+        <section className="bg-white border border-grid rounded-2xl p-5">
+          <div className="flex items-center mb-1">
+            <h3 className="font-semibold">Custom impact scoring</h3>
+            <label className="ml-3 inline-flex items-center gap-1.5 text-sm text-inksec">
+              <input type="checkbox" checked={sc.enabled} onChange={(e) => setSc({ ...sc, enabled: e.target.checked })} /> enabled
+            </label>
+            <button onClick={saveScoring} className="ml-auto inline-flex items-center gap-1.5 text-sm text-[#2a78d6]">
+              <IconDeviceFloppy size={15} stroke={2} />{saved === 'scoring' ? 'Saved' : 'Save'}
+            </button>
+          </div>
+          <p className="text-sm text-inksec mb-3">Your own value framework (beyond AVE). Impact = base(relevance, reach, engagement) × source/sentiment/verified/keyword multipliers. Sort the feed by <b>Impact</b>.</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+            {(['w_relevance', 'w_reach', 'w_engagement', 'verified_bonus', 'keyword_factor'] as const).map((k) => (
+              <label key={k} className="capitalize">{k.replace('w_', 'weight ').replace('_', ' ')}
+                <input type="number" step="0.1" value={sc[k]} onChange={(e) => setSc({ ...sc, [k]: Number(e.target.value) })}
+                  className="w-full border border-grid rounded-lg px-2 py-1 mt-0.5 tabular-nums" />
+              </label>
+            ))}
+          </div>
+          <div className="grid grid-cols-3 gap-3 text-sm mt-3">
+            {(['pos', 'neu', 'neg'] as const).map((k) => (
+              <label key={k}>sentiment {k}
+                <input type="number" step="0.1" value={sc.sentiment?.[k] ?? 1}
+                  onChange={(e) => setSc({ ...sc, sentiment: { ...sc.sentiment, [k]: Number(e.target.value) } })}
+                  className="w-full border border-grid rounded-lg px-2 py-1 mt-0.5 tabular-nums" />
+              </label>
+            ))}
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3 mt-3 text-sm">
+            <label>Source priority (platform:weight, one per line)
+              <textarea rows={4} value={Object.entries(sc.platform_priority || {}).map(([k, v]) => `${k}:${v}`).join('\n')}
+                onChange={(e) => {
+                  const obj: any = {}
+                  e.target.value.split('\n').forEach((ln) => { const [k, v] = ln.split(':'); if (k?.trim() && v) obj[k.trim()] = Number(v) })
+                  setSc({ ...sc, platform_priority: obj })
+                }}
+                placeholder="news:1.5&#10;x:1.2" className="w-full border border-grid rounded-lg px-3 py-2 mt-0.5 font-mono text-[13px]" />
+            </label>
+            <label>Priority keywords (spokespeople, product names — one per line)
+              <textarea rows={4} value={(sc.keyword_terms || []).join('\n')}
+                onChange={(e) => setSc({ ...sc, keyword_terms: e.target.value.split('\n').map((x) => x.trim()).filter(Boolean) })}
+                placeholder="CEO name&#10;recall" className="w-full border border-grid rounded-lg px-3 py-2 mt-0.5 font-mono text-[13px]" />
+            </label>
+          </div>
+          <div className="flex items-center gap-3 mt-3">
+            <button onClick={recompute} disabled={recomputing === 'running'}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-ink text-white text-sm disabled:opacity-50 active:scale-[0.98]">
+              {recomputing === 'running' ? 'Re-scoring…' : 'Save + recompute all'}
+            </button>
+            {recomputing && recomputing !== 'running' && <span className="text-sm text-inksec">{recomputing}</span>}
+            <span className="text-[11px] text-muted">New posts score automatically; recompute applies weight changes to existing posts (no AI).</span>
+          </div>
+        </section>
+      )}
 
       <section className="bg-white border border-grid rounded-2xl p-5">
         <h3 className="font-semibold mb-1 inline-flex items-center gap-1.5"><IconPuzzle size={16} stroke={2} />Browser extension</h3>

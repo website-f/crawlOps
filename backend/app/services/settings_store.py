@@ -23,6 +23,16 @@ DEFAULTS: dict[str, dict] = {
         "list": ["economy", "cost of living", "jobs", "healthcare", "education",
                  "security", "corruption", "environment", "infrastructure", "housing"],
     },
+    # custom "impact" scoring — the team's own value framework (Meltwater beyond-AVE)
+    "scoring": {
+        "enabled": True,
+        "w_relevance": 1.0, "w_reach": 1.0, "w_engagement": 1.0,
+        "sentiment": {"pos": 1.0, "neu": 1.0, "neg": 1.3},  # crises often matter more
+        "verified_bonus": 1.4,
+        "platform_priority": {"news": 1.5},                  # platform -> multiplier
+        "keyword_terms": [],                                 # spokesperson / priority terms
+        "keyword_factor": 2.0,
+    },
 }
 
 

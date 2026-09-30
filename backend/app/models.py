@@ -88,9 +88,12 @@ class Post(Base):
     cluster_id: Mapped[int | None] = mapped_column(Integer, index=True)
     reach: Mapped[int | None] = mapped_column(BigInteger)
     emv: Mapped[float | None] = mapped_column(Float)
+    custom_score: Mapped[float | None] = mapped_column(Float)       # team impact score
     is_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
     bot_suspect: Mapped[bool] = mapped_column(Boolean, default=False)
     enrichment_status: Mapped[str] = mapped_column(String(20), default="pending")
+    labels: Mapped[list] = mapped_column(JSONB, default=list)       # user tags (workflow)
+    sentiment_locked: Mapped[bool] = mapped_column(Boolean, default=False)  # manual override
     __table_args__ = (
         Index("ix_posts_topic_time", "topic_id", "posted_at"),
         Index("ix_posts_simhash_band", "simhash"),
@@ -253,3 +256,21 @@ class FetchRun(Base):
     found: Mapped[int] = mapped_column(Integer, default=0)
     inserted: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(Text)
+
+
+class Tag(Base):
+    """A colored label operators apply to posts (Meltwater-style workflow tagging)."""
+    __tablename__ = "tags"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(60), unique=True)
+    color: Mapped[str] = mapped_column(String(16), default="#2a78d6")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SavedView(Base):
+    """A named feed filter set (Meltwater 'saved search' / custom category)."""
+    __tablename__ = "saved_views"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    params: Mapped[dict] = mapped_column(JSON, default=dict)   # {q, platforms, sentiments, ...}
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
