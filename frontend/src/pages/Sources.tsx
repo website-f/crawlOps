@@ -1,4 +1,4 @@
-import { IconAlertTriangle, IconCheck, IconLogin2, IconPlugConnected, IconSnowflake, IconUserCheck, IconUserOff, IconX } from '@tabler/icons-react'
+import { IconAlertTriangle, IconCheck, IconInfoCircle, IconLogin2, IconPlugConnected, IconSnowflake, IconUserCheck, IconUserOff, IconX } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
 import LoginBrowser from '../components/LoginBrowser'
 import { PlatformBadge } from '../components/PlatformIcon'
@@ -101,7 +101,16 @@ interface Source {
   id: number; platform: string; connector: string; tier: number; enabled: boolean
   status: string; last_run_at: string | null; last_error: string
   needs_credentials: boolean; missing: string[]; configured: boolean
+  method: string; blurb: string
   account?: AccountState
+}
+
+const METHOD_BADGE: Record<string, { label: string; cls: string }> = {
+  login: { label: 'Login', cls: 'bg-[#7c3aed]/10 text-[#5b21b6]' },
+  api: { label: 'API key', cls: 'bg-[#2a78d6]/10 text-[#1e4e8c]' },
+  watchlist: { label: 'Watchlist · free', cls: 'bg-[#0ca30c]/10 text-[#006300]' },
+  config: { label: 'Setup', cls: 'bg-[#fab219]/15 text-[#7a5200]' },
+  keyless: { label: 'Keyless', cls: 'bg-grid text-inksec' },
 }
 interface Run { id: number; topic_id: number; source_id: number; started_at: string; found: number; inserted: number; error: string }
 interface Proxy { id: number; url: string; tag: string; country: string; score: number; cooling: boolean; success: number; blocked: number }
@@ -140,19 +149,28 @@ export default function Sources() {
   return (
     <div className="space-y-5">
       <div className="bg-white border border-grid rounded-2xl p-4">
+        <div className="flex items-start gap-2 text-[12px] text-inksec bg-plane/60 border border-grid rounded-xl px-3 py-2 mb-3">
+          <IconInfoCircle size={15} stroke={2} className="mt-0.5 shrink-0 text-[#2a78d6]" />
+          <span>Two ways to connect a platform: <b>Log in</b> (opens a real browser window on the crawler's IP —
+          type your credentials, it captures the session automatically and won't get flagged) or an <b>API key</b>
+          (Threads, YouTube). Keyless sources need nothing. To pause a topic's non-stop crawling, use the
+          <b> Auto-run</b> toggle on the <b>Topics</b> page.</span>
+        </div>
         <div className="text-sm font-medium mb-3">Connectors</div>
         <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
           {sources.map((s) => {
+            const badge = METHOD_BADGE[s.method] || METHOD_BADGE.keyless
             return (
               <div key={s.id} className="border border-grid rounded-xl p-3">
                 <div className="flex items-center gap-2">
                   <PlatformBadge platform={s.platform} size={24} />
                   <span className="font-medium text-sm">{s.connector}</span>
-                  <span className="text-[10px] px-1.5 rounded-full bg-grid text-inksec">tier {s.tier}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${badge.cls}`}>{badge.label}</span>
                   <span className="ml-auto inline-flex items-center gap-1 text-xs" style={{ color: STATUS_COLOR[s.status] }}>
                     <span className="w-1.5 h-1.5 rounded-full" style={{ background: STATUS_COLOR[s.status] }} />{s.status}
                   </span>
                 </div>
+                {s.blurb && <div className="text-[11px] text-muted mt-1">{s.blurb}</div>}
                 {/* Account state beats source.status for the stealth tier: a connected
                     account whose cookies expired and no account at all both leave
                     status='dormant', which is what made Facebook look unconnected. */}
@@ -184,7 +202,9 @@ export default function Sources() {
                       <button onClick={() => setConnecting(s)}
                         className="inline-flex items-center gap-1 text-xs text-[#2a78d6] hover:underline">
                         <IconPlugConnected size={13} stroke={2} />
-                        {s.configured ? 'edit keys' : 'connect'}
+                        {s.method === 'api'
+                          ? (s.configured ? 'edit API key' : 'add API key')
+                          : (s.configured ? 'edit' : 'set up')}
                       </button>
                     )}
                     <button onClick={() => post(`/sources/${s.id}/toggle`).then(reload)}
@@ -236,7 +256,7 @@ export default function Sources() {
             </tbody>
           </table>
 
-          <div className="text-sm font-medium mt-4 mb-2">Stealth sessions <span className="text-muted font-normal">(one per platform account; import cookies to go live)</span></div>
+          <div className="text-sm font-medium mt-4 mb-2">Social logins <span className="text-muted font-normal">(recommended: “Log in here” opens a real window and auto-captures; cookie paste is a fallback)</span></div>
           <div className="flex gap-2 mb-2 flex-wrap">
             <select value={sessPlatform} onChange={(e) => setSessPlatform(e.target.value)}
               className="border border-grid rounded-lg px-2 py-1.5 text-sm">

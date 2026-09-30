@@ -15,6 +15,31 @@ router = APIRouter(prefix="/api/sources", tags=["sources"])
 STEALTH_CONNECTORS = {"facebook_stealth", "instagram_stealth", "tiktok_stealth",
                       "x_stealth", "threads_stealth"}
 
+# how each connector is connected + a one-line blurb — drives the Sources UI so the
+# operator immediately sees whether a source needs a login, an API key, or nothing.
+_METHODS = {
+    "threads": ("api", "Official Threads API — needs a Meta token (keyword search)."),
+    "youtube": ("api", "YouTube Data API key (free Google Cloud key)."),
+    "factcheck": ("api", "Google Fact Check API key (free)."),
+    "podcastindex": ("api", "Podcast Index API key + secret (free)."),
+    "places": ("api", "Google Places API key (paid)."),
+    "appstore": ("config", "App Store app IDs — no key needed."),
+    "rss": ("config", "Add RSS/Atom feed URLs or RSSHub routes."),
+    "telegram": ("config", "Public channel usernames — no login needed."),
+    "tiktok_watch": ("watchlist", "Follow public TikTok accounts (free, via RSSHub)."),
+    "threads_watch": ("watchlist", "Follow public Threads accounts (free, via RSSHub)."),
+    "youtube_watch": ("watchlist", "Follow YouTube channels (free, no API key)."),
+    "facebook_stealth": ("login", "Log in with an account — no public API for search."),
+    "instagram_stealth": ("login", "Log in with an account — no public API for search."),
+    "tiktok_stealth": ("login", "Log in with an account (or use the free watchlist)."),
+    "x_stealth": ("login", "Log in with an account (X public API is paid)."),
+    "threads_stealth": ("login", "Log in with an account, or use the Threads API token."),
+}
+
+
+def _method(connector: str) -> tuple[str, str]:
+    return _METHODS.get(connector, ("keyless", "Public source — nothing to connect."))
+
 
 def _account_state(platform: str, sessions: list) -> dict:
     """What the operator actually needs to know about a stealth platform: is an
@@ -50,8 +75,9 @@ def list_sources(db: Session = Depends(get_db)):
     sessions = db.query(StealthSession).all()
     out = []
     for s in db.query(Source).order_by(Source.tier, Source.platform).all():
+        method, blurb = _method(s.connector)
         row = {"id": s.id, "platform": s.platform, "connector": s.connector, "tier": s.tier,
-               "enabled": s.enabled, "status": s.status,
+               "enabled": s.enabled, "status": s.status, "method": method, "blurb": blurb,
                "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None,
                "last_error": (s.last_error or "")[:300],
                "needs_credentials": creds.needs_credentials(s.connector),
