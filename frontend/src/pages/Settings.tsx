@@ -2,7 +2,7 @@ import { IconCopy, IconDeviceFloppy, IconDownload, IconPuzzle, IconSend, IconTra
 import { useEffect, useState } from 'react'
 import { MultiSelect, TagInput } from '../components/ui/controls'
 import { useDialog } from '../components/ui/overlays'
-import { del, download, get, getToken, post, put } from '../lib/api'
+import { del, download, get, getToken, post, put, setToken } from '../lib/api'
 import { BRAND, FEED_TABS } from '../lib/platform'
 
 const PLATFORM_OPTS = FEED_TABS.filter((t) => t !== 'all').map((p) => ({ value: p, label: BRAND[p]?.label || p, color: BRAND[p]?.color }))
@@ -28,6 +28,18 @@ export default function Settings() {
   const [recomputing, setRecomputing] = useState('')
   const [topicsList, setTopicsList] = useState<{ id: number; name: string }[]>([])
   const [digestResult, setDigestResult] = useState('')
+  const [pw, setPw] = useState({ old_password: '', new_password: '', confirm: '' })
+
+  const changePassword = async () => {
+    if (pw.new_password.length < 8) { dialog.toast('New password must be at least 8 characters', 'error'); return }
+    if (pw.new_password !== pw.confirm) { dialog.toast('New passwords do not match', 'error'); return }
+    try {
+      const r = await post<{ token: string }>('/auth/change-password', { old_password: pw.old_password, new_password: pw.new_password })
+      setToken(r.token)   // token_version bumped -> keep this session valid, sign the rest out
+      setPw({ old_password: '', new_password: '', confirm: '' })
+      dialog.toast('Password changed — other sessions signed out', 'success')
+    } catch (e: any) { dialog.toast(String(e.message || e), 'error') }
+  }
 
   useEffect(() => {
     get<AllSettings>('/settings').then(setS)
@@ -75,7 +87,30 @@ export default function Settings() {
 
   return (
     <div className="max-w-3xl space-y-5">
-      <h2 className="font-semibold text-lg">Settings</h2>
+      <div>
+        <h1 className="text-lg font-bold tracking-tight">Settings</h1>
+        <p className="text-[13px] text-inksec mt-0.5">Account, alerts, pipeline, scoring, access and integrations.</p>
+      </div>
+
+      <section className="bg-white border border-grid rounded-2xl p-5 shadow-card">
+        <h3 className="font-semibold mb-1">Change your password</h3>
+        <p className="text-sm text-inksec mb-3">Changing your password signs out all your other sessions.</p>
+        <div className="grid sm:grid-cols-3 gap-3">
+          <input type="password" autoComplete="current-password" placeholder="Current password" value={pw.old_password}
+            onChange={(e) => setPw({ ...pw, old_password: e.target.value })}
+            className="border border-grid rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition" />
+          <input type="password" autoComplete="new-password" placeholder="New password" value={pw.new_password}
+            onChange={(e) => setPw({ ...pw, new_password: e.target.value })}
+            className="border border-grid rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition" />
+          <input type="password" autoComplete="new-password" placeholder="Confirm new password" value={pw.confirm}
+            onChange={(e) => setPw({ ...pw, confirm: e.target.value })}
+            className="border border-grid rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition" />
+        </div>
+        <button onClick={changePassword} disabled={!pw.old_password || !pw.new_password}
+          className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-ink text-white text-sm font-medium disabled:opacity-50 hover:brightness-110 active:scale-[0.99] transition">
+          Update password
+        </button>
+      </section>
 
       <section className="bg-white border border-grid rounded-2xl p-5">
         <div className="flex items-center mb-1">

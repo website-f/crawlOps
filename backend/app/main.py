@@ -10,7 +10,7 @@ from .routers import (ai_engine, alerts, analytics, authors, auth, benchmark,
                       dashboards, explore, media, posts, reports, scoring, search,
                       settings, sources, suppression, system, topics, workflow)
 from .services import meili
-from .services.auth import current_user
+from .services.auth import admin_for_writes, current_user
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
@@ -38,12 +38,16 @@ app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"],
 app.include_router(auth.router)
 app.include_router(media.router)
 
-# protected — every request needs a valid bearer token
+# protected — every request needs a valid bearer token. The routers that manage
+# credentials / proxies / provider keys / global settings additionally require the
+# admin role for any mutating (non-GET) request.
 _auth = [Depends(current_user)]
+_admin_writes = [Depends(admin_for_writes)]
+_write_gated = {ai_engine, sources, settings}
 for r in (topics, posts, analytics, ai_engine, sources, suppression, alerts,
           settings, explore, benchmark, reports, system, search, authors, workflow,
           scoring, dashboards):
-    app.include_router(r.router, dependencies=_auth)
+    app.include_router(r.router, dependencies=_admin_writes if r in _write_gated else _auth)
 
 
 @app.get("/api/health")

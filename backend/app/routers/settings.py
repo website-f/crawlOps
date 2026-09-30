@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..services.notifier import test_channels
-from ..services.settings_store import all_settings, get_setting, set_setting
+from ..services.settings_store import (all_settings, get_setting, masked_notifiers,
+                                       set_setting)
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -25,6 +26,8 @@ def write(key: str, body: SettingIn, db: Session = Depends(get_db)):
 
 @router.get("/{key}")
 def read_one(key: str, db: Session = Depends(get_db)):
+    if key == "notifiers":
+        return masked_notifiers(db)   # never expose notifier secrets
     return get_setting(db, key)
 
 

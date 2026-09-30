@@ -8,7 +8,7 @@ import time
 
 import bcrypt
 import jwt
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -50,6 +50,7 @@ def verify_password(pw: str, hashed: str) -> bool:
 
 def make_token(user: User) -> str:
     payload = {"sub": user.username, "uid": user.id, "role": user.role,
+               "tv": user.token_version or 0,
                "exp": int(time.time()) + TOKEN_TTL}
     return jwt.encode(payload, _secret(), algorithm=ALGO)
 
@@ -71,6 +72,8 @@ def current_user(cred: HTTPAuthorizationCredentials | None = Depends(_bearer),
     user = db.get(User, payload.get("uid"))
     if user is None:
         raise HTTPException(401, "user no longer exists")
+    if payload.get("tv", 0) != (user.token_version or 0):
+        raise HTTPException(401, "token revoked — sign in again")
     return user
 
 
@@ -80,3 +83,13 @@ def require_role(*roles: str):
             raise HTTPException(403, "insufficient role")
         return user
     return dep
+
+
+def admin_for_writes(request: Request, user: User = Depends(current_user)) -> User:
+    """Reads (GET/HEAD/OPTIONS) allowed for any authenticated user; mutating requests
+    require the admin role. Applied to the sensitive routers (sources, settings, AI
+    engine) so an analyst/viewer can look but not change credentials, proxies,
+    provider keys or global settings."""
+    if request.method not in ("GET", "HEAD", "OPTIONS") and user.role != "admin":
+        raise HTTPException(403, "admin role required for this action")
+    return user

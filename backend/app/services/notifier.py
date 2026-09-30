@@ -6,7 +6,7 @@ import logging
 import httpx
 from sqlalchemy.orm import Session
 
-from .settings_store import get_setting
+from .settings_store import notifier_config
 
 log = logging.getLogger("notifier")
 
@@ -15,7 +15,7 @@ def notify(db: Session, title: str, body: str, payload: dict,
            channels: dict | None = None) -> dict:
     """channels overrides per-rule; falls back to global Settings notifiers."""
     cfg = channels or {}
-    globals_ = get_setting(db, "notifiers")
+    globals_ = notifier_config(db)   # decrypted secrets, for sending only
     webhook = cfg.get("webhook_url") or globals_.get("webhook_url", "")
     tg_token = cfg.get("telegram_bot_token") or globals_.get("telegram_bot_token", "")
     tg_chat = cfg.get("telegram_chat_id") or globals_.get("telegram_chat_id", "")

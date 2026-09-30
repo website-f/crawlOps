@@ -64,6 +64,7 @@ _ADD_COLUMNS = [
     ("posts", "labels", "JSONB DEFAULT '[]'::jsonb"),
     ("posts", "sentiment_locked", "BOOLEAN DEFAULT false"),
     ("posts", "custom_score", "DOUBLE PRECISION"),
+    ("users", "token_version", "INTEGER NOT NULL DEFAULT 0"),
     # semantic search: per-post embedding (nomic-embed-text = 768d). Stored via raw SQL
     # (not ORM-mapped) so the hot feed path never pays to load 768 floats per post.
     ("posts", "embedding", "vector(768)"),
