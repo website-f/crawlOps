@@ -22,6 +22,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("darkweb-agent")
 
 TOR_SOCKS = os.environ.get("TOR_SOCKS", "socks5://tor:9050")
+CHROMIUM_PATH = os.environ.get("CHROMIUM_PATH") or None   # set in the image; browser-use drives it
 app = FastAPI(title="CrawlOps dark-web agent")
 
 # Hard caps so one call can never run away (slow Tor + per-step LLM cost).
@@ -98,6 +99,7 @@ async def _investigate(body: ResearchIn) -> ResearchOut:
                      api_key=body.llm.get("api_key", ""), temperature=0.0)
     profile = BrowserProfile(
         headless=True,
+        executable_path=CHROMIUM_PATH,
         proxy=ProxySettings(server=TOR_SOCKS),
         # a plain profile on Tor: do NOT randomize a unique fingerprint here — on Tor the
         # anonymity set is "everyone looks the same", so uniqueness is counter-productive.
