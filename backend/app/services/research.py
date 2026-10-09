@@ -232,8 +232,7 @@ async def run_research(db: Session, query_text: str, *, max_sites: int = 5,
         return {"cached": False, "status": "error", "error": rq.error, "query_id": rq.id}
 
     try:
-        found = await discover_onions(normalize_query(query_text).replace(" ", " "),
-                                      max_sites * 2)
+        found = await discover_onions(query_text, max_sites * 2)
         sites = (seed_urls(db) + found)[:min(max_sites, MAX_SITES_CAP)]
         n_findings = 0
         for url in sites:
