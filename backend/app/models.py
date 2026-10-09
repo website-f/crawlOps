@@ -285,3 +285,62 @@ class Dashboard(Base):
     name: Mapped[str] = mapped_column(String(120))
     widgets: Mapped[list] = mapped_column(JSON, default=list)  # [{id,type,title,topic_id,days}]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+# ---------------------------------------------------------------------------
+# Dark-web research warehouse (StealthMole-style). Deliberately NOT tied to the
+# topic lifecycle: findings are harvested intel that must survive a topic being
+# deleted and be reusable when the same query is researched again. The query-hash
+# cache mirrors StealthMole's search_id = sha256(normalized query).
+# ---------------------------------------------------------------------------
+class ResearchQuery(Base):
+    """One row per distinct normalized research query = the cache key. Re-running
+    the same query hits this row; if it's fresh, findings are served from the
+    warehouse instead of re-crawling Tor."""
+    __tablename__ = "research_queries"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    query_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)  # sha256(normalized)
+    query_text: Mapped[str] = mapped_column(Text, default="")
+    algorithm: Mapped[str] = mapped_column(String(20), default="darkweb")  # darkweb|camofox
+    status: Mapped[str] = mapped_column(String(20), default="idle")  # idle|running|done|error
+    summary: Mapped[str] = mapped_column(Text, default="")           # AI brief over the findings
+    finding_count: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text)
+    first_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    run_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ResearchFinding(Base):
+    """A harvested intel node. Topic-independent and deduped by content hash so a
+    re-crawl updates last_seen/last_scan in place instead of duplicating. Carries
+    StealthMole's first_seen / last_seen / last_scan stamps."""
+    __tablename__ = "research_findings"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    finding_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)  # sha256(source_url|text)
+    source_url: Mapped[str] = mapped_column(Text, default="")
+    source_type: Mapped[str] = mapped_column(String(16), default="onion", index=True)  # onion|web
+    source_host: Mapped[str] = mapped_column(String(120), default="", index=True)
+    title: Mapped[str] = mapped_column(Text, default="")
+    text: Mapped[str] = mapped_column(Text, default="")
+    lang: Mapped[str] = mapped_column(String(12), default="")
+    entities: Mapped[list] = mapped_column(JSONB, default=list)   # extracted IOCs [{type,value}]
+    threat_level: Mapped[str | None] = mapped_column(String(12))  # low|medium|high|critical
+    relevance: Mapped[int | None] = mapped_column(Integer)        # 0-100 from the judge
+    summary: Mapped[str] = mapped_column(Text, default="")
+    raw_meta: Mapped[dict] = mapped_column(JSONB, default=dict)
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    last_scan: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ResearchQueryFinding(Base):
+    """Link table: which query surfaced which finding, and how strongly. Deleting a
+    topic (hence its query link) never deletes the finding itself."""
+    __tablename__ = "research_query_findings"
+    query_id: Mapped[int] = mapped_column(ForeignKey("research_queries.id", ondelete="CASCADE"),
+                                          primary_key=True)
+    finding_id: Mapped[int] = mapped_column(ForeignKey("research_findings.id", ondelete="CASCADE"),
+                                            primary_key=True)
+    score: Mapped[float | None] = mapped_column(Float)
+    seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

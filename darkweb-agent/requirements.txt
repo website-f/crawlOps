@@ -1,0 +1,6 @@
+fastapi==0.115.*
+uvicorn[standard]==0.32.*
+httpx[socks]==0.28.*
+browser-use==0.1.*
+langchain-openai==0.2.*
+beautifulsoup4==4.12.*

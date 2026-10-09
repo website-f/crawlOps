@@ -68,6 +68,8 @@ _ADD_COLUMNS = [
     # semantic search: per-post embedding (nomic-embed-text = 768d). Stored via raw SQL
     # (not ORM-mapped) so the hot feed path never pays to load 768 floats per post.
     ("posts", "embedding", "vector(768)"),
+    # same for dark-web research findings, so harvested intel is semantically searchable
+    ("research_findings", "embedding", "vector(768)"),
 ]
 _ADD_INDEXES = [
     ("ix_posts_emotion", "CREATE INDEX ix_posts_emotion ON posts (emotion)"),
@@ -76,6 +78,9 @@ _ADD_INDEXES = [
     ("ix_posts_topics_gin", "CREATE INDEX ix_posts_topics_gin ON posts USING gin (topics)"),
     ("ix_posts_embedding", "CREATE INDEX ix_posts_embedding ON posts "
      "USING hnsw (embedding vector_cosine_ops)"),
+    ("ix_findings_embedding", "CREATE INDEX ix_findings_embedding ON research_findings "
+     "USING hnsw (embedding vector_cosine_ops)"),
+    ("ix_findings_host", "CREATE INDEX ix_findings_host ON research_findings (source_host)"),
 ]
 # json -> jsonb so jsonb_* functions, containment, and equality work. The DO block
 # only rewrites a column still typed 'json', so it is a catalog-check no-op once done.
