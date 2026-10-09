@@ -94,9 +94,13 @@ async def _investigate(body: ResearchIn) -> ResearchOut:
     from browser_use.browser.session import BrowserSession
     from browser_use.llm import ChatOpenAI
 
+    # DeepSeek (and most OpenAI-compatible providers that aren't OpenAI itself) reject
+    # browser-use's json_schema response_format — it 400s "response_format unavailable".
+    # dont_force_structured_output makes browser-use put the schema in the prompt instead.
     llm = ChatOpenAI(model=body.llm.get("model", "deepseek-flash"),
                      base_url=body.llm.get("base_url", "https://api.deepseek.com/v1"),
-                     api_key=body.llm.get("api_key", ""), temperature=0.0)
+                     api_key=body.llm.get("api_key", ""), temperature=0.0,
+                     dont_force_structured_output=True, add_schema_to_system_prompt=True)
     profile = BrowserProfile(
         headless=True,
         executable_path=CHROMIUM_PATH,
