@@ -3,4 +3,3 @@ uvicorn[standard]==0.32.*
 httpx[socks]==0.28.*
 browser-use==0.13.11
 beautifulsoup4==4.12.*
-playwright==1.47.0

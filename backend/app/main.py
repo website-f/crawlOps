@@ -7,8 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from .bootstrap import init_schema_and_seed
 from .config import settings as app_settings
 from .routers import (ai_engine, alerts, analytics, authors, auth, benchmark,
-                      dashboards, explore, media, posts, reports, scoring, search,
-                      settings, sources, suppression, system, topics, workflow)
+                      dashboards, explore, media, posts, reports, research, scoring,
+                      search, settings, sources, suppression, system, topics, workflow)
 from .services import meili
 from .services.auth import admin_for_writes, current_user
 
@@ -46,7 +46,7 @@ _admin_writes = [Depends(admin_for_writes)]
 _write_gated = {ai_engine, sources, settings}
 for r in (topics, posts, analytics, ai_engine, sources, suppression, alerts,
           settings, explore, benchmark, reports, system, search, authors, workflow,
-          scoring, dashboards):
+          scoring, dashboards, research):
     app.include_router(r.router, dependencies=_admin_writes if r in _write_gated else _auth)
 
 

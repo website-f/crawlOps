@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     rsshub_url: str = "http://rsshub:1200"
     # optional Cloudflare-challenge solver (start with --profile cloudflare); blank = off
     flaresolverr_url: str = "http://flaresolverr:8191"
+    # dark-web research tier (start with --profile darkweb); services only exist then
+    darkweb_agent_url: str = "http://darkweb-agent:8600"
+    tor_socks_url: str = "socks5://tor:9050"
+    ahmia_url: str = "https://ahmia.fi"
 
     threads_access_token: str = ""
     youtube_api_key: str = ""

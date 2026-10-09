@@ -1,15 +1,14 @@
-# Python 3.12 (browser-use needs >=3.11). We install Playwright's Chromium and point
-# browser-use at it via BrowserProfile.executable_path — browser-use 0.13 drives it
-# over CDP, no Playwright runtime needed beyond the binary + system deps.
-FROM python:3.12-slim
+# Playwright "noble" image = Ubuntu 24.04 (Python 3.12, which browser-use needs) with
+# Chromium + all system deps preinstalled. browser-use drives that Chromium over CDP
+# via BrowserProfile.executable_path — no pip playwright browser install needed.
+FROM mcr.microsoft.com/playwright/python:v1.47.0-noble
 
 WORKDIR /srv
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
-    && playwright install --with-deps chromium
+RUN pip install --no-cache-dir -r requirements.txt
 
-# resolve the chromium binary path once, at build time, into an env the app reads
-RUN echo "CHROMIUM_PATH=$(find /root/.cache/ms-playwright -name chrome -type f | head -1)" > /srv/chromium.env \
+# record the preinstalled chromium path for the app to pass as executable_path
+RUN echo "CHROMIUM_PATH=$(ls -d /ms-playwright/chromium-*/chrome-linux/chrome | head -1)" > /srv/chromium.env \
     && cat /srv/chromium.env
 
 COPY app.py .
