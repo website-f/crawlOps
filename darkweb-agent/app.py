@@ -29,8 +29,8 @@ app = FastAPI(title="CrawlOps dark-web agent")
 MAX_STEPS_CAP = 14
 GLOBAL_CONCURRENCY = asyncio.Semaphore(1)   # one Chromium at a time on a shared box
 
-_TASK = """You are a defensive threat-intelligence analyst. You are ALREADY on the page {url}.
-Your ONLY goal is to observe and report whether this site contains material relevant to:
+_TASK = """You are a defensive threat-intelligence analyst. FIRST, open this URL: {url}
+Then your ONLY goal is to observe and report whether this site contains material relevant to:
 
     {query}
 
@@ -111,8 +111,7 @@ async def _investigate(body: ResearchIn) -> ResearchOut:
     task = _TASK.format(url=body.url, query=body.query,
                         max_links=max(0, min(body.max_links, 5)))
     steps = max(2, min(body.max_steps, MAX_STEPS_CAP))
-    agent = Agent(task=task, llm=llm, browser_session=session,
-                  initial_actions=[{"go_to_url": {"url": body.url}}])
+    agent = Agent(task=task, llm=llm, browser_session=session)
     try:
         history = await agent.run(max_steps=steps)
         raw = history.final_result() if hasattr(history, "final_result") else str(history)

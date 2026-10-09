@@ -4,7 +4,7 @@ import {
   IconLayoutSidebarRightCollapse, IconLogout, IconMap2,
   IconMenu2, IconMoodSmile, IconPlanet, IconPlug, IconScale, IconSettings,
   IconSparkles, IconTable, IconTargetArrow, IconUserOff, IconUsersGroup,
-  IconUsers, IconX,
+  IconUsers, IconShieldLock, IconX,
 } from '@tabler/icons-react'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
@@ -21,6 +21,7 @@ const Competitors = lazy(() => import('./pages/Competitors'))
 const Dashboards = lazy(() => import('./pages/Dashboards'))
 const DataExplorer = lazy(() => import('./pages/DataExplorer'))
 const Feed = lazy(() => import('./pages/Feed'))
+const DarkWeb = lazy(() => import('./pages/DarkWeb'))
 const Galaxy = lazy(() => import('./pages/Galaxy'))
 const MapView = lazy(() => import('./pages/MapView'))
 const Search = lazy(() => import('./pages/Search'))
@@ -37,6 +38,7 @@ const GROUPS: { label: string; items: { to: string; label: string; Icon: any }[]
     items: [
       { to: '/', label: 'Feed', Icon: IconAntenna },
       { to: '/search', label: 'Semantic Search', Icon: IconSparkles },
+      { to: '/darkweb', label: 'Dark Web', Icon: IconShieldLock },
       { to: '/topics', label: 'Topics', Icon: IconTargetArrow },
       { to: '/map', label: 'Geography', Icon: IconMap2 },
     ],
@@ -185,6 +187,7 @@ function Shell() {
         <Routes>
           <Route path="/" element={<Feed />} />
           <Route path="/search" element={<Search />} />
+          <Route path="/darkweb" element={<DarkWeb />} />
           <Route path="/topics" element={<Topics />} />
           <Route path="/analytics" element={<Analytics view="overview" />} />
           <Route path="/analytics/health" element={<Analytics view="health" />} />
